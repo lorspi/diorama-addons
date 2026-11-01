@@ -1,0 +1,49 @@
+name: Bug report
+description: Something does not work as expected
+labels: ["bug"]
+body:
+  - type: dropdown
+    id: mod
+    attributes:
+      label: Mod
+      options: ["claims", "webmap", "clientmap", "claims-api", "Not sure"]
+    validations:
+      required: true
+  - type: input
+    id: versions
+    attributes:
+      label: Versions
+      description: Mod version(s), NeoForge version, and Diorama version for clientmap.
+      placeholder: "claims 0.1.0, NeoForge 21.1.265"
+    validations:
+      required: true
+  - type: dropdown
+    id: side
+    attributes:
+      label: Where does it happen?
+      options: ["Dedicated server", "Singleplayer / LAN", "Client connected to a server"]
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened and what did you expect?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. /claim\n2. ..."
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: latest.log or crash report (use a paste site for long logs).
+      render: text
+  - type: textarea
+    id: mods
+    attributes:
+      label: Other mods installed
