@@ -12,4 +12,4 @@ plugins {
 
 rootProject.name = "diorama-addons"
 
-include("claims-api", "claims", "webmap", "clientmap")
+include("claims-api", "render-core", "claims", "webmap", "clientmap")

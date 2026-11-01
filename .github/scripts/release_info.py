@@ -9,7 +9,7 @@ import os
 import re
 import sys
 
-MODULES = ["claims-api", "claims", "webmap", "clientmap"]
+MODULES = ["claims-api", "render-core", "claims", "webmap", "clientmap"]
 
 
 def fail(msg):
