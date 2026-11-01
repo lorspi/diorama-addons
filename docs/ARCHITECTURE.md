@@ -115,6 +115,45 @@ template expanded by `processResources`.
     registers game tests in development, so they are inert in production. Run them
     with `./gradlew :claims:runGameTestServer`.
 
+## Phase 2 — webmap
+
+| Package | Depends on Minecraft | Content |
+|---|---|---|
+| `webmap.render` (pure part) | no | `PackedArray`, `ChunkData`, `ChunkRenderer`, `Shading`, `TileMath`, `Downsampler` |
+| `webmap.render` | yes | `ChunkNbt` (NBT → `ChunkData`), `McBlockColors`, `TileStore` (disk), `TileRenderer` (thread) |
+| `webmap.layer` | claims-api only / yes | `ClaimGeometry`, `OwnerColors` (pure), `ClaimsLayer`, `PlayersLayer` |
+| `webmap.http` | no (JDK) | `WebServer` |
+
+### Decisions
+
+18. **HTTP server: the JDK's `com.sun.net.httpserver`** (module `jdk.httpserver`), no extra dependency.
+    Port 8123 and bind address are in a COMMON config (`config/dioaddons_webmap-common.toml`, one file
+    for the whole server, not per world). A busy port logs an error and the server keeps running.
+19. **Reading chunks through `ChunkMap.read`** instead of parsing `.mca` files by hand. It runs on the
+    storage IO worker, sees chunks that are not yet flushed, and never blocks the server thread. The
+    render thread has minimum priority and a configurable chunks-per-second cap.
+20. **Tile scheme = region files.** Zoom 0 tiles are 512×512 blocks (one region), so a full render maps
+    1:1 to the region files on disk; zoomed-out levels are built from their four children.
+21. **Colours from vanilla `MapColor`** (`Block.defaultMapColor()`), without biome tinting. This keeps
+    the renderer independent from client resources and matches the in-game map style.
+22. **Claims layer through claims-api only.** The API is bundled (Jar-in-Jar) in the webmap jar, so the
+    classes always exist; without the claims mod no implementation is registered and the layer is
+    reported as unavailable. The API does not expose members or permissions at all, so the web cannot
+    leak them. Outlines are computed on the server.
+23. **Player positions off by default** (`layers.showPlayers`); spectators are always hidden.
+24. **`-Pdioaddons.withClaims=true`** adds the claims mod to the webmap dev runs, to test both together
+    without making webmap depend on claims.
+25. **Server-side messages** use the same translatable-with-fallback approach as claims (small copy of
+    the helper, since mods do not depend on each other).
+
+### Known limitations
+
+- Restarting the server re-queues regions whose `.mca` file was written after the tile (usually the ones
+  saved at shutdown). It is throttled like any other render.
+- Chunks are re-rendered when unloaded even if nothing changed (the plan asks for unload events); the
+  chunks-per-second cap keeps the cost bounded.
+- No isometric view yet; no biome tinting.
+
 ## Assumptions to review
 
 - The GitHub organisation/repository URL is not set yet, so `issueTrackerURL`

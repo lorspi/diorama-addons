@@ -8,7 +8,7 @@ its own.
 |---|---|---|---|
 | Claims API | `dioaddons_claims_api` | Library (bundled inside the other jars) | ✅ Read-only API |
 | Claims | `dioaddons_claims` | Server (required) + client (optional GUI) | ✅ Phase 1: claims, friends, permissions, GUI, commands, protection |
-| Web Map | `dioaddons_webmap` | Server only | 🚧 Phase 0 (empty skeleton) |
+| Web Map | `dioaddons_webmap` | Server only | ✅ Phase 2: tiles, claims layer, optional players |
 | Client Map | `dioaddons_clientmap` | Server + client, integrates with [Diorama](https://github.com/SunkenInTime/diorama) | 🚧 Phase 0 (empty skeleton) |
 
 ## Requirements
@@ -42,6 +42,20 @@ Protect your land chunk by chunk, add friends and decide exactly what each of th
 
 See [docs/claims-permissions.md](docs/claims-permissions.md) for every permission and command.
 
+## Web Map
+
+A live map of the world in the browser, served by the game server itself. Players install nothing.
+
+- Open `http://<server>:8123/` (port and bind address in `config/dioaddons_webmap-common.toml`).
+- Tiles are rendered in the background from the saved world, at low priority and with a chunks-per-second
+  cap; only changed chunks are redrawn.
+- With Claims installed, claims are drawn with a colour per owner and a label (name and owner). Members and
+  permissions are never published.
+- Player positions are **off by default** (`layers.showPlayers`).
+- `/webmap status`, `/webmap render [dimension]`, `/webmap clearcache` for operators.
+
+See [docs/webmap-api.md](docs/webmap-api.md).
+
 ## Testing
 
 ```sh
@@ -53,6 +67,7 @@ See [docs/claims-permissions.md](docs/claims-permissions.md) for every permissio
 
 - [Architecture and design decisions](docs/ARCHITECTURE.md)
 - [Claims permissions and commands](docs/claims-permissions.md)
+- [Web map HTTP API](docs/webmap-api.md)
 
 ## License
 
