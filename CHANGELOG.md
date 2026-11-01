@@ -17,6 +17,8 @@ Each mod is versioned on its own with [Semantic Versioning](https://semver.org/)
 
 ### [Unreleased]
 
+### [0.1.0] - 2026-11-01
+
 - New library: terrain shading in the style of the Diorama map, top-down (claims screen) and angled
   (web map). Bundled by the mods that use it.
 
@@ -24,17 +26,14 @@ Each mod is versioned on its own with [Semantic Versioning](https://semver.org/)
 
 ### [Unreleased]
 
-- The claims screen draws the real terrain under the grid, in the style of the Diorama map (texture
-  colours, biome tints, sun and shadows, relief), with claim colours, borders and a light chunk grid on top.
-- The members tab and the help text fit on short screens.
-
 ### [0.1.0] - 2026-11-01
 
 - Chunk-based claims with per-player limits (chunks and claims), contiguity and optional spawn distance.
 - Friends with per-member permissions and templates (Visitor, Member, Trusted); public permissions and
   claim settings (PvP, explosions, fire spread, mob griefing).
-- Claims screen: chunk grid with drag selection, claim list, members and public tabs (key **G** or
-  `/claims menu`).
+- Claims screen: the real terrain around you in the style of the Diorama map (texture colours, biome tints,
+  sun and shadows, relief) under a chunk grid with claim colours and borders; drag selection, claim list,
+  members and public tabs (key **G** or `/claims menu`).
 - Commands for players without the client mod: `/claim`, `/unclaim`, `/claims ...`, `/claims admin ...`.
 - Protection for blocks, containers, items, entities, animals, farmland, explosions, fire, fluids, pistons
   and mob griefing.
@@ -45,20 +44,18 @@ Each mod is versioned on its own with [Semantic Versioning](https://semver.org/)
 
 ### [Unreleased]
 
-- New default style `DIORAMA`: the map is drawn at an angle like the Diorama map, from block textures,
-  with sun, shadows, sky occlusion and outlines. Claims are painted on the terrain they cover, with an edge
-  where the owner changes, and labels where they show. The mouse shows the real x, y, z and the claim.
-- Block textures: vanilla ones come from the official client jar, downloaded once from Mojang and checked
-  against its SHA-1 (`render.downloadClientAssets`); modded blocks use the textures in their own jars.
-- `render.style = TOP_DOWN` keeps the previous flat style.
-
 ### [0.1.0] - 2026-11-01
 
-- Web map served by the game server (default port 8123): top-down tiles with relief shading, zoom-out
-  levels, dimension selector (Leaflet 1.9.4 bundled).
-- Background rendering at minimum priority with a chunks-per-second cap; only changed chunks are redrawn.
-- Claims layer (name and owner, colour per owner) when Claims is installed; optional player positions
-  (off by default).
+- Web map served by the game server (default port 8123), with zoom-out levels and a dimension selector
+  (Leaflet 1.9.4 bundled).
+- Default style `DIORAMA`: the map is drawn at an angle like the Diorama map, from block textures, with
+  sun, shadows, sky occlusion and outlines. Vanilla textures come from the official client jar, downloaded
+  once from Mojang and checked against its SHA-1 (`render.downloadClientAssets`); modded blocks use the
+  textures in their own jars. `render.style = TOP_DOWN` gives a flat map with vanilla map colours instead.
+- Background rendering at minimum priority with a chunks-per-second cap; only changed areas are redrawn.
+- Claims painted on the terrain they cover (colour per owner, edge where the owner changes, name and owner
+  label) when Claims is installed; the mouse shows x, y, z and the claim. Optional player positions (off by
+  default).
 - `/webmap status|render|clearcache`; JSON endpoints `/api/info`, `/api/claims`, `/api/players`.
 
 ## clientmap
