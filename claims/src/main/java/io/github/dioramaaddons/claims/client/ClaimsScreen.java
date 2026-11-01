@@ -9,7 +9,14 @@ import io.github.dioramaaddons.claims.network.EditClaimPayload;
 import io.github.dioramaaddons.claims.network.RequestStatePayload;
 import io.github.dioramaaddons.claims.network.StatePayload;
 import io.github.dioramaaddons.claims.network.UnsubscribePayload;
+import io.github.dioramaaddons.claims.client.terrain.TerrainSampler;
+import io.github.dioramaaddons.claims.client.terrain.TerrainTexture;
 import io.github.dioramaaddons.claimsapi.ChunkCoord;
+import io.github.dioramaaddons.render.MapStyle;
+import io.github.dioramaaddons.render.TopDownScene;
+import io.github.dioramaaddons.render.TopDownShader;
+import java.util.concurrent.CompletableFuture;
+import net.minecraft.Util;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
@@ -48,6 +55,20 @@ public final class ClaimsScreen extends Screen {
     private static final int COLOR_OTHER = 0xFFA83232;
     private static final int COLOR_ADMIN = 0xFFC7802B;
     private static final int COLOR_ADMIN_SELECTED = 0xFFF0B060;
+    /** Fills drawn over the terrain picture: see-through so the land still reads. */
+    private static final int ALPHA_FILL = 0x66000000;
+    private static final int GRID_LINE = 0x33000000;
+    private static final int TERRAIN_REFRESH_TICKS = 100;
+
+    private final TerrainTexture terrain = new TerrainTexture();
+    private int terrainGeneration;
+    private boolean terrainPending;
+    /** What the uploaded terrain shows: center chunk, radius and dimension. */
+    private long terrainCenter = Long.MIN_VALUE;
+    private int terrainRadius = -1;
+    private String terrainDimension = "";
+    private int terrainScale;
+    private int ticksSinceTerrain;
 
     private @Nullable StatePayload state;
     private Tab tab = Tab.CLAIMS;
@@ -86,6 +107,10 @@ public final class ClaimsScreen extends Screen {
 
     void onState(StatePayload newState) {
         this.state = newState;
+        if (ChunkCoord.pack(newState.centerX(), newState.centerZ()) != terrainCenter || newState.radius() != terrainRadius
+                || !newState.dimension().equals(terrainDimension)) {
+            requestTerrain();
+        }
         this.radius = newState.radius();
         if (selectedClaim != null && detail(selectedClaim) == null) {
             selectedClaim = null;
@@ -108,7 +133,52 @@ public final class ClaimsScreen extends Screen {
     }
 
     @Override
+    public void tick() {
+        super.tick();
+        if (++ticksSinceTerrain >= TERRAIN_REFRESH_TICKS) {
+            requestTerrain();
+        }
+    }
+
+    /** Pixels per block so the terrain is about as sharp as the screen. */
+    private int terrainScale() {
+        double screenPixelsPerBlock = cell * Minecraft.getInstance().getWindow().getGuiScale() / 16.0;
+        return (int) Math.max(1, Math.min(4, Math.round(screenPixelsPerBlock)));
+    }
+
+    /** Reads the loaded chunks now, shades them on a background thread, then uploads the picture. */
+    private void requestTerrain() {
+        Minecraft mc = Minecraft.getInstance();
+        StatePayload st = state;
+        if (terrainPending || st == null || mc.level == null
+                || !mc.level.dimension().location().toString().equals(st.dimension())) {
+            return;
+        }
+        ticksSinceTerrain = 0;
+        terrainPending = true;
+        int r = st.radius();
+        int blocks = (2 * r + 1) * 16;
+        int scale = terrainScale();
+        int generation = ++terrainGeneration;
+        TopDownScene scene = TerrainSampler.sample(mc.level, (st.centerX() - r) * 16, (st.centerZ() - r) * 16, blocks, blocks);
+        CompletableFuture.supplyAsync(() -> TopDownShader.shade(scene, MapStyle.DIORAMA, scale), Util.backgroundExecutor())
+                .whenCompleteAsync((pixels, error) -> {
+                    terrainPending = false;
+                    if (error != null || generation != terrainGeneration) {
+                        return;
+                    }
+                    terrain.upload(pixels, blocks * scale, blocks * scale);
+                    terrainCenter = ChunkCoord.pack(st.centerX(), st.centerZ());
+                    terrainRadius = r;
+                    terrainDimension = st.dimension();
+                    terrainScale = scale;
+                }, mc);
+    }
+
+    @Override
     public void removed() {
+        terrainGeneration++;
+        terrain.close();
         var connection = Minecraft.getInstance().getConnection();
         if (connection != null && connection.hasChannel(UnsubscribePayload.TYPE)) {
             PacketDistributor.sendToServer(UnsubscribePayload.INSTANCE);
@@ -161,6 +231,9 @@ public final class ClaimsScreen extends Screen {
         int availW = width - PANEL_W - 3 * MARGIN;
         int availH = height - top - 40;
         cell = Math.max(2, Math.min(availW, availH) / size);
+        if (state != null && terrainScale != 0 && terrainScale != terrainScale()) {
+            requestTerrain();
+        }
         int gridPx = cell * size;
         gridX = MARGIN + Math.max(0, (availW - gridPx) / 2);
         gridY = top;
@@ -361,14 +434,59 @@ public final class ClaimsScreen extends Screen {
     private void renderGrid(GuiGraphics g, int mouseX, int mouseY) {
         int px = cell * size;
         g.fill(gridX - 1, gridY - 1, gridX + px + 1, gridY + px + 1, COLOR_BG);
-        int gap = cell >= 6 ? 1 : 0;
         int[] cells = state.cells();
         int stateSize = 2 * state.radius() + 1;
+        boolean showTerrain = terrain.ready() && terrainCenter == ChunkCoord.pack(state.centerX(), state.centerZ())
+                && terrainRadius == state.radius() && terrainDimension.equals(state.dimension());
+        if (showTerrain) {
+            int shown = cell * stateSize;
+            g.blit(TerrainTexture.ID, gridX, gridY, shown, shown, 0, 0, terrain.width(), terrain.height(),
+                    terrain.width(), terrain.height());
+        }
+        int gap = !showTerrain && cell >= 6 ? 1 : 0;
         for (int row = 0; row < size && row < stateSize; row++) {
             for (int col = 0; col < size && col < stateSize; col++) {
+                int idx = cells[row * stateSize + col];
                 int x = gridX + col * cell;
                 int y = gridY + row * cell;
-                g.fill(x, y, x + cell - gap, y + cell - gap, colorFor(cells[row * stateSize + col]));
+                if (!showTerrain) {
+                    g.fill(x, y, x + cell - gap, y + cell - gap, colorFor(idx));
+                } else if (idx >= 0) {
+                    g.fill(x, y, x + cell, y + cell, (colorFor(idx) & 0xFFFFFF) | ALPHA_FILL);
+                }
+            }
+        }
+        if (showTerrain) {
+            // Light chunk grid, then a solid border wherever the owner changes.
+            if (cell >= 5) {
+                for (int i = 1; i < stateSize; i++) {
+                    g.fill(gridX + i * cell, gridY, gridX + i * cell + 1, gridY + px, GRID_LINE);
+                    g.fill(gridX, gridY + i * cell, gridX + px, gridY + i * cell + 1, GRID_LINE);
+                }
+            }
+            int t = cell >= 12 ? 2 : 1;
+            for (int row = 0; row < stateSize; row++) {
+                for (int col = 0; col < stateSize; col++) {
+                    int idx = cells[row * stateSize + col];
+                    if (idx < 0) {
+                        continue;
+                    }
+                    int c = colorFor(idx) | 0xFF000000;
+                    int x = gridX + col * cell;
+                    int y = gridY + row * cell;
+                    if (col == 0 || cells[row * stateSize + col - 1] != idx) {
+                        g.fill(x, y, x + t, y + cell, c);
+                    }
+                    if (col == stateSize - 1 || cells[row * stateSize + col + 1] != idx) {
+                        g.fill(x + cell - t, y, x + cell, y + cell, c);
+                    }
+                    if (row == 0 || cells[(row - 1) * stateSize + col] != idx) {
+                        g.fill(x, y, x + cell, y + t, c);
+                    }
+                    if (row == stateSize - 1 || cells[(row + 1) * stateSize + col] != idx) {
+                        g.fill(x, y + cell - t, x + cell, y + cell, c);
+                    }
+                }
             }
         }
         // drag selection

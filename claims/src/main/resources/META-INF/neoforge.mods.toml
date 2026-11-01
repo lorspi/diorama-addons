@@ -33,3 +33,10 @@ type = "required"
 versionRange = "*"
 ordering = "AFTER"
 side = "BOTH"
+
+[[dependencies.${mod_id}]]
+modId = "${mod_id_prefix}_render_core"
+type = "required"
+versionRange = "*"
+ordering = "AFTER"
+side = "BOTH"
