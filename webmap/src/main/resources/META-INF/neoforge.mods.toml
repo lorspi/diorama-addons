@@ -1,6 +1,7 @@
 modLoader = "javafml"
 loaderVersion = "[1,)"
 license = "${mod_license}"
+issueTrackerURL = "https://github.com/lorspi/diorama-addons/issues"
 
 [[mods]]
 modId = "${mod_id}"

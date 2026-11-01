@@ -210,5 +210,4 @@ Research and the list of Diorama entry points: [clientmap-research.md](clientmap
 
 ## Assumptions to review
 
-- The GitHub organisation/repository URL is not set yet, so `issueTrackerURL`
-  is omitted from `neoforge.mods.toml`.
+- Repository: https://github.com/lorspi/diorama-addons (`issueTrackerURL` points to its issues).
