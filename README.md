@@ -9,6 +9,7 @@ one builds its own jar and works alone, and they work together when installed si
 | [Web Map](#web-map) | `dioaddons_webmap` | Server only | Live world map in the browser, with claims |
 | [Client Map](#client-map-diorama) | `dioaddons_clientmap` | Server and clients with [Diorama](https://modrinth.com/mod/diorama-map) | Claims, shared explored map, shared waypoints and positions in Diorama |
 | Claims API | `dioaddons_claims_api` | Nothing to do: bundled inside the other jars | Small read-only API other mods can use |
+| Render Core | `dioaddons_render_core` | Nothing to do: bundled inside the jars that draw maps | Terrain shading in the Diorama style |
 
 Players **without any of these mods can join** a server that has them; everything can also be done with
 commands.
@@ -33,8 +34,9 @@ commands.
   griefing.
 - Protects breaking and placing, doors and redstone, containers (vanilla and modded), item use, entities,
   animals, farmland, explosions, fire, fluids and pistons crossing the border, and mob griefing.
-- Open the screen with **G** (change it in Controls) or `/claims menu`. Left click or drag to claim or
-  release; right click to select a claim.
+- Open the screen with **G** (change it in Controls) or `/claims menu`. The grid shows the real terrain
+  around you in the style of the Diorama map, with each claim's colour and border on top. Left click or
+  drag to claim or release; right click to select a claim.
 
 | Command | |
 |---|---|

@@ -13,9 +13,19 @@ Each mod is versioned on its own with [Semantic Versioning](https://semver.org/)
 - First release: read-only API to query claims (`ClaimsApi`, `ClaimInfo`, `ChunkCoord`), change listener and
   `ClaimsApiProvider`. Bundled (Jar-in-Jar) by the other mods.
 
+## render-core
+
+### [Unreleased]
+
+- New library: top-down terrain shading in the style of the Diorama map. Bundled by the mods that use it.
+
 ## claims
 
 ### [Unreleased]
+
+- The claims screen draws the real terrain under the grid, in the style of the Diorama map (texture
+  colours, biome tints, sun and shadows, relief), with claim colours, borders and a light chunk grid on top.
+- The members tab and the help text fit on short screens.
 
 ### [0.1.0] - 2026-11-01
 

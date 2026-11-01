@@ -5,8 +5,9 @@ large changes so we can agree on the approach.
 
 ## Project layout
 
-One Gradle repository, four independent NeoForge mods (Minecraft 1.21.1, NeoForge 21.1.265+, Java 21):
-`claims-api`, `claims`, `webmap`, `clientmap`. Shared build settings live in `build-logic`. Read
+One Gradle repository with three independent NeoForge mods and two bundled libraries (Minecraft 1.21.1,
+NeoForge 21.1.265+, Java 21): `claims`, `webmap`, `clientmap`, plus `claims-api` and `render-core`. Shared build
+settings live in `build-logic`. Read
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) before changing how the mods talk to each other.
 
 Ground rules:

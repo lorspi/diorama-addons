@@ -208,6 +208,21 @@ Research and the list of Diorama entry points: [clientmap-research.md](clientmap
 37. **claims-api is released as its own tag** for API consumers, even though players never install it
     separately (it is bundled in the other jars).
 
+## Terrain in the Diorama style
+
+38. **`render-core` module** (`dioaddons_render_core`): pure-Java terrain shading shared by the mods that
+    draw maps, bundled Jar-in-Jar like claims-api. `TopDownShader` adapts the Diorama map's light model
+    (MIT, see THIRD_PARTY.md) to a view from straight above: warm sun and cool sky light in linear space,
+    cast shadows traced over the height field, sky occlusion from the horizon in eight directions, crease
+    occlusion, height shade, slope light (seen from above, slopes show no side faces), outlines at the foot
+    of higher ground (strong at cliffs, faint at one-block steps), shallow water showing the floor, and the
+    same colour grade and default values.
+39. **Claims screen terrain is top-down**, not angled, so the chunk grid stays square and clicks map to one
+    chunk. Colours are the average of each block's top texture taken from the game's own baked models
+    (resource packs and modded blocks included) with biome tints, as Diorama does. Only chunks loaded on the
+    client are drawn; the rest stays dark. Sampling runs on the client thread; shading runs on a background
+    thread; the picture is refreshed when the grid moves and every 5 seconds.
+
 ## Assumptions to review
 
 - Repository: https://github.com/lorspi/diorama-addons (`issueTrackerURL` points to its issues).
