@@ -118,5 +118,6 @@
   "dioaddons_claims.gui.claimed": "Reclamados %s chunk(s).",
   "dioaddons_claims.gui.released": "Liberados %s chunk(s).",
   "dioaddons_claims.gui.saved": "Guardado.",
-  "dioaddons_claims.gui.server_missing": "Este servidor no tiene Diorama Addons: Claims."
+  "dioaddons_claims.gui.server_missing": "Este servidor no tiene Diorama Addons: Claims.",
+  "dioaddons_claims.error.too_far": "Demasiado lejos: solo puedes reclamar chunks a %s chunks de ti como máximo."
 }

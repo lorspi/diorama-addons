@@ -220,6 +220,10 @@ public final class ClaimsService implements ClaimsApi {
     public void sendState(ServerPlayer player, StatePayload.@Nullable Feedback feedback) {
         Subscription sub = subscribers.get(player.getUUID());
         if (sub == null || !player.connection.hasChannel(StatePayload.TYPE)) {
+            // Requests can also come from elsewhere (e.g. the Diorama map): answer on the action bar.
+            if (feedback != null) {
+                player.displayClientMessage(ServerLang.tr(player, feedback.key(), feedback.args().toArray()), true);
+            }
             return;
         }
         ChunkPos center = player.chunkPosition();

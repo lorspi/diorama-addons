@@ -59,7 +59,8 @@ final class ServerPayloads {
             }
         }
         if (chunks.isEmpty()) {
-            service.sendState(player, feedback(ClaimResult.NOT_CLAIMED, 0));
+            service.sendState(player, new StatePayload.Feedback(false, "dioaddons_claims.error.too_far",
+                    List.of(String.valueOf(maxRadius))));
             return;
         }
         ServerLevel level = player.serverLevel();
