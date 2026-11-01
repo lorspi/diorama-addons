@@ -38,7 +38,7 @@ public final class ClaimsScreen extends Screen {
     private static final int PANEL_W = 180;
     private static final int ROW_H = 11;
     private static final int CLAIM_ROWS = 6;
-    private static final int MEMBER_ROWS = 4;
+    private static final int MEMBER_ROWS = 3;
 
     private static final int COLOR_BG = 0xFF161616;
     private static final int COLOR_FREE = 0xFF333333;
@@ -159,7 +159,7 @@ public final class ClaimsScreen extends Screen {
         size = 2 * radius + 1;
         int top = 26;
         int availW = width - PANEL_W - 3 * MARGIN;
-        int availH = height - top - 30;
+        int availH = height - top - 40;
         cell = Math.max(2, Math.min(availW, availH) / size);
         int gridPx = cell * size;
         gridX = MARGIN + Math.max(0, (availW - gridPx) / 2);
@@ -261,30 +261,34 @@ public final class ClaimsScreen extends Screen {
                 onlineIndex++;
                 rebuildWidgets();
             }).bounds(panelX, y, PANEL_W, 16).build());
+            y += 18;
         }
-        y += 20;
+        y += 2;
 
         StatePayload.Member m = selectedMemberEntry();
         if (m == null) {
             return;
         }
+        // Templates, four rows of toggles and Remove: shrink the rows when the screen is short.
+        int step = Math.max(12, Math.min(17, (height - 42 - y) / 6));
+        int bh = step - 1;
         int tw = (PANEL_W - 4) / 3;
         int i = 0;
         for (PermissionTemplate t : PermissionTemplate.values()) {
             int mask = Permission.toMask(t.permissions());
             Button b = Button.builder(Component.translatable(t.translationKey()), btn -> send(new EditClaimPayload(
                     EditClaimPayload.Op.SET_MEMBER, d.id(), Optional.of(m.id()), "", mask)))
-                    .bounds(panelX + i * (tw + 2), y, tw, 16).build();
+                    .bounds(panelX + i * (tw + 2), y, tw, bh).build();
             b.active = m.mask() != mask;
             addRenderableWidget(b);
             i++;
         }
-        y += 19;
-        y = addToggles(y, Permission.playerPermissions(), m.mask(), mask -> send(new EditClaimPayload(
+        y += step + 1;
+        y = addToggles(y, Permission.playerPermissions(), m.mask(), step, mask -> send(new EditClaimPayload(
                 EditClaimPayload.Op.SET_MEMBER, d.id(), Optional.of(m.id()), "", mask)));
         addRenderableWidget(Button.builder(Component.translatable("dioaddons_claims.gui.remove_member", m.name()),
                 b -> send(new EditClaimPayload(EditClaimPayload.Op.REMOVE_MEMBER, d.id(), Optional.of(m.id()), "", 0)))
-                .bounds(panelX, y + 2, PANEL_W, 16).build());
+                .bounds(panelX, y + 1, PANEL_W, bh).build());
     }
 
     private void initPublicTab(int y) {
@@ -293,16 +297,17 @@ public final class ClaimsScreen extends Screen {
             return;
         }
         y += 24;
-        y = addToggles(y, Permission.playerPermissions(), d.publicMask(), mask -> send(new EditClaimPayload(
+        y = addToggles(y, Permission.playerPermissions(), d.publicMask(), 17, mask -> send(new EditClaimPayload(
                 EditClaimPayload.Op.SET_PUBLIC, d.id(), Optional.empty(), "", mask)));
         y += 12;
         EnumSet<Permission> flags = EnumSet.complementOf(Permission.playerPermissions());
-        addToggles(y, flags, d.publicMask(), mask -> send(new EditClaimPayload(
+        addToggles(y, flags, d.publicMask(), 17, mask -> send(new EditClaimPayload(
                 EditClaimPayload.Op.SET_PUBLIC, d.id(), Optional.empty(), "", mask)));
     }
 
     /** Two columns of on/off buttons. Returns the y below the last row. */
-    private int addToggles(int y, EnumSet<Permission> perms, int currentMask, java.util.function.IntConsumer onChange) {
+    private int addToggles(int y, EnumSet<Permission> perms, int currentMask, int step,
+            java.util.function.IntConsumer onChange) {
         int w = (PANEL_W - 2) / 2;
         int i = 0;
         for (Permission p : perms) {
@@ -311,16 +316,16 @@ public final class ClaimsScreen extends Screen {
                     .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.RED)
                     .append(Component.translatable(p.translationKey()).withStyle(ChatFormatting.WHITE));
             int x = panelX + (i % 2) * (w + 2);
-            int by = y + (i / 2) * 17;
+            int by = y + (i / 2) * step;
             Button b = Button.builder(label, btn -> onChange.accept(currentMask ^ p.bit()))
-                    .bounds(x, by, w, 16)
+                    .bounds(x, by, w, step - 1)
                     .tooltip(net.minecraft.client.gui.components.Tooltip.create(
                             Component.translatable(p.translationKey() + ".desc")))
                     .build();
             addRenderableWidget(b);
             i++;
         }
-        return y + ((perms.size() + 1) / 2) * 17;
+        return y + ((perms.size() + 1) / 2) * step;
     }
 
     // ---------------------------------------------------------------- rendering
@@ -416,7 +421,8 @@ public final class ClaimsScreen extends Screen {
                 renderMemberList(g, d, mouseX, mouseY);
                 if (selectedMember == null) {
                     g.drawWordWrap(font, Component.translatable("dioaddons_claims.gui.select_member"), panelX,
-                            memberListY + MEMBER_ROWS * ROW_H + 6 + 40, PANEL_W, 0x888888);
+                            memberListY + MEMBER_ROWS * ROW_H + 6 + 22 + (state.onlinePlayers().isEmpty() ? 0 : 18),
+                            PANEL_W, 0x888888);
                 }
             }
             case PUBLIC -> {
@@ -500,12 +506,15 @@ public final class ClaimsScreen extends Screen {
     }
 
     private void renderFooter(GuiGraphics g) {
+        // Below the grid only, so the text never runs under the side panel.
+        int width = panelX - 2 * MARGIN;
         StatePayload.Feedback fb = state.feedback();
         if (fb != null) {
             Component msg = Component.translatable(fb.key(), fb.args().toArray());
-            g.drawString(font, msg, MARGIN, height - 24, fb.success() ? 0x80FF80 : 0xFF8080);
+            g.drawString(font, font.plainSubstrByWidth(msg.getString(), width), MARGIN, height - 34,
+                    fb.success() ? 0x80FF80 : 0xFF8080);
         }
-        g.drawString(font, Component.translatable("dioaddons_claims.gui.hint"), MARGIN, height - 12, 0x888888);
+        g.drawWordWrap(font, Component.translatable("dioaddons_claims.gui.hint"), MARGIN, height - 23, width, 0x888888);
     }
 
     private void renderGridTooltip(GuiGraphics g, int mouseX, int mouseY) {
