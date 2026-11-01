@@ -1,0 +1,16 @@
+{
+  "required": false,
+  "package": "io.github.dioramaaddons.clientmap.compat.diorama.mixin",
+  "plugin": "io.github.dioramaaddons.clientmap.compat.diorama.DioramaMixinPlugin",
+  "compatibilityLevel": "JAVA_21",
+  "minVersion": "0.8",
+  "client": [
+    "FtbChunksMixin",
+    "MapScreenMixin",
+    "TrackedPlayersInvoker",
+    "WaypointStoreMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}

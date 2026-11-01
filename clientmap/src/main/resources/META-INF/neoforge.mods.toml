@@ -30,3 +30,21 @@ type = "optional"
 versionRange = "*"
 ordering = "NONE"
 side = "BOTH"
+
+[[dependencies.${mod_id}]]
+modId = "${mod_id_prefix}_claims_api"
+type = "required"
+versionRange = "*"
+ordering = "AFTER"
+side = "BOTH"
+
+# Optional: the client integration works with the Diorama versions listed in DioramaCompat.SUPPORTED.
+[[dependencies.${mod_id}]]
+modId = "diorama"
+type = "optional"
+versionRange = "*"
+ordering = "AFTER"
+side = "CLIENT"
+
+[[mixins]]
+config = "${mod_id}.diorama.mixins.json"
