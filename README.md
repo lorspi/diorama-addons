@@ -9,7 +9,7 @@ its own.
 | Claims API | `dioaddons_claims_api` | Library (bundled inside the other jars) | ✅ Read-only API |
 | Claims | `dioaddons_claims` | Server (required) + client (optional GUI) | ✅ Phase 1: claims, friends, permissions, GUI, commands, protection |
 | Web Map | `dioaddons_webmap` | Server only | ✅ Phase 2: tiles, claims layer, optional players |
-| Client Map | `dioaddons_clientmap` | Server + client, integrates with [Diorama](https://github.com/SunkenInTime/diorama) | 🚧 Phase 0 (empty skeleton) |
+| Client Map | `dioaddons_clientmap` | Server + client, integrates with [Diorama](https://github.com/SunkenInTime/diorama) 0.6.0 | ✅ Phase 3: claims, shared explored map, shared waypoints, player positions |
 
 ## Requirements
 
@@ -56,6 +56,22 @@ A live map of the world in the browser, served by the game server itself. Player
 
 See [docs/webmap-api.md](docs/webmap-api.md).
 
+## Client Map (Diorama integration)
+
+Adds server-shared data to the [Diorama](https://modrinth.com/mod/diorama-map) map. Install it on the
+server and on clients that use Diorama **0.6.0** (`0.6.0+neoforge-1.21.1`); other Diorama versions are
+detected and left alone.
+
+- **Claims** on Diorama's map and minimap, coloured by owner, with "claim · owner" on hover (needs Claims
+  on the server). With Claims also on the client, right-click the map to **claim or release a chunk**.
+- **Shared explored map:** chunks explored by others are drawn on your map, sent in the background.
+- **Shared waypoints:** right-click → *Add shared waypoint here*; delete from the pin's menu; or
+  `/sharedwaypoint add|list|rename|remove`.
+- **Player positions** of your pool on the map and radar; hide yours with `/maplocation hide`.
+- Server config (`config/dioaddons_clientmap-common.toml`): explored map and locations each `DISABLED`,
+  `GLOBAL` or `GROUPS`. Groups: `/mapgroup create|invite|join|leave|kick|info`.
+- Client commands: `/clientmap status`, `/clientmap resync`.
+
 ## Testing
 
 ```sh
@@ -68,6 +84,7 @@ See [docs/webmap-api.md](docs/webmap-api.md).
 - [Architecture and design decisions](docs/ARCHITECTURE.md)
 - [Claims permissions and commands](docs/claims-permissions.md)
 - [Web map HTTP API](docs/webmap-api.md)
+- [Diorama research and integration plan](docs/clientmap-research.md)
 
 ## License
 

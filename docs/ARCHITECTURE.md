@@ -154,6 +154,47 @@ template expanded by `processResources`.
   chunks-per-second cap keeps the cost bounded.
 - No isometric view yet; no biome tinting.
 
+## Phase 3 — clientmap (Diorama integration)
+
+Research and the list of Diorama entry points: [clientmap-research.md](clientmap-research.md).
+
+| Package | Side | Content |
+|---|---|---|
+| `clientmap.core` | pure | `ShareMode`, `Scopes`, `ExploredLog`, `GroupRegistry`, `SharedWaypoint` |
+| `clientmap.server` | server | `ClientMapServer` (streams, players, waypoints, claims feed), `ClientMapData`, commands |
+| `clientmap.network` | both | optional payloads |
+| `clientmap.client` | client | handshake, chunk rebuilding, sync progress; never touches Diorama classes |
+| `clientmap.compat.diorama` | client | `DioramaCompat` (version gate), `DioramaBridge`, `DioramaMenus`, mixins + mixin plugin |
+| `clientmap.compat.claims` | client | sends the claims mod's own `claim_chunks` payload; loaded only when that mod is present |
+
+### Decisions
+
+26. **clientmap has a server part.** Claims, the explored map, shared waypoints and player positions all
+    come from the server, so the same jar runs on both sides. Without Diorama on the client nothing is
+    requested and nothing is sent.
+27. **Opt-in handshake.** Only clients with a supported Diorama send `hello`; the server sends map data to
+    those clients only. All payloads are optional, so vanilla clients and clients without clientmap join.
+28. **Pools (`Scopes`).** `exploredMap.mode` and `locations.mode` are `DISABLED`, `GLOBAL` or `GROUPS`
+    (config, as decided). In `GROUPS` mode a player without a group keeps a pool of their own; joining a
+    group merges their explored chunks and waypoints into it.
+29. **Groups are clientmap's own** (`/mapgroup create|invite|join|leave|kick|info`), because claims
+    members are per claim, not symmetric groups, and clientmap must work without claims.
+30. **Explored chunks** are recorded from `ChunkWatchEvent.Watch` (a chunk sent to a player) into an
+    append-only log per pool and dimension; the position in the log is the sequence number clients resume
+    from. Chunks are sent oldest first, at `chunksPerSecond` per player, read from the live chunk when
+    loaded and from storage (`ChunkMap.read`) otherwise. Only block and biome sections are sent.
+31. **Claims to Diorama** go through claims-api on the server (no claims mod needed on the client to
+    see them); claiming from the map uses the claims mod's own payload, so it needs that mod on the client
+    and is validated by the same server code as the GUI. The claims server now answers requests from
+    players without the screen open on the action bar, and reports "too far" explicitly.
+32. **Shared waypoint permissions:** the owner, the owner of the group whose pool it is in, and operators
+    may rename or delete it. Limits per pool are configurable.
+33. **Privacy:** each player can hide their position (`/maplocation hide`); default from config.
+    Spectators are never sent. Positions go only to players in the same pool.
+34. **Diorama version gate.** A mixin plugin applies the Diorama mixins only for versions listed in
+    `DioramaCompat.SUPPORTED` (now `0.6.0+neoforge-1.21.1`); the dependency is optional with any version
+    so other versions do not stop the game from loading.
+
 ## Assumptions to review
 
 - The GitHub organisation/repository URL is not set yet, so `issueTrackerURL`
