@@ -4,7 +4,7 @@ import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
 import io.github.dioramaaddons.webmap.config.WebMapConfig;
-import io.github.dioramaaddons.webmap.render.TileRenderer;
+import io.github.dioramaaddons.webmap.render.MapRenderer;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.DimensionArgument;
@@ -45,7 +45,7 @@ final class WebMapCommand {
         src.sendSuccess(() -> s.web().running()
                 ? ServerLang.tr(src, "dioaddons_webmap.cmd.http_on", WebMapConfig.BIND.get(), WebMapConfig.PORT.get())
                 : ServerLang.tr(src, "dioaddons_webmap.cmd.http_off"), false);
-        TileRenderer r = s.renderer();
+        MapRenderer r = s.renderer();
         if (r == null) {
             src.sendSuccess(() -> ServerLang.tr(src, "dioaddons_webmap.cmd.render_off"), false);
         } else {

@@ -28,7 +28,7 @@ import org.slf4j.Logger;
  */
 public final class WebServer {
     private static final Logger LOGGER = LogUtils.getLogger();
-    private static final Pattern TILE = Pattern.compile("^/tiles/([a-z0-9_.+~-]{1,64})/(\\d)/(-?\\d{1,7})/(-?\\d{1,7})\\.png$");
+    private static final Pattern TILE = Pattern.compile("^/(tiles|hits)/([a-z0-9_.+~-]{1,64})/(\\d)/(-?\\d{1,7})/(-?\\d{1,7})\\.png$");
     private static final Map<String, String> STATIC = Map.of(
             "/index.html", "text/html; charset=utf-8",
             "/app.js", "text/javascript; charset=utf-8",
@@ -46,6 +46,9 @@ public final class WebServer {
         Set<String> dimensionKeys();
 
         Path tilePath(String dimKey, int zoom, int x, int y);
+
+        /** Hit map next to a tile (angled style only), or null. */
+        @Nullable Path hitPath(String dimKey, int zoom, int x, int y);
 
         String infoJson();
 
@@ -150,13 +153,15 @@ public final class WebServer {
 
     private void tile(HttpExchange ex, String path) throws IOException {
         Matcher m = TILE.matcher(path);
-        if (!m.matches() || !source.dimensionKeys().contains(m.group(1))) {
+        if (!m.matches() || !source.dimensionKeys().contains(m.group(2))) {
             notFound(ex);
             return;
         }
-        Path file = source.tilePath(m.group(1), Integer.parseInt(m.group(2)), Integer.parseInt(m.group(3)),
-                Integer.parseInt(m.group(4)));
-        if (!Files.isRegularFile(file)) {
+        int zoom = Integer.parseInt(m.group(3));
+        int x = Integer.parseInt(m.group(4));
+        int y = Integer.parseInt(m.group(5));
+        Path file = m.group(1).equals("tiles") ? source.tilePath(m.group(2), zoom, x, y) : source.hitPath(m.group(2), zoom, x, y);
+        if (file == null || !Files.isRegularFile(file)) {
             notFound(ex);
             return;
         }

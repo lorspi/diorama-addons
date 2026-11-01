@@ -6,6 +6,10 @@ import io.github.dioramaaddons.webmap.config.WebMapConfig;
 import io.github.dioramaaddons.webmap.http.WebServer;
 import io.github.dioramaaddons.webmap.layer.ClaimsLayer;
 import io.github.dioramaaddons.webmap.layer.PlayersLayer;
+import io.github.dioramaaddons.render.ObliqueRenderer;
+import io.github.dioramaaddons.render.ObliqueTiles;
+import io.github.dioramaaddons.webmap.render.MapRenderer;
+import io.github.dioramaaddons.webmap.render.ObliqueTileRenderer;
 import io.github.dioramaaddons.webmap.render.TileMath;
 import io.github.dioramaaddons.webmap.render.TileRenderer;
 import io.github.dioramaaddons.webmap.render.TileStore;
@@ -29,7 +33,9 @@ public final class WebMapService implements WebServer.Source {
     private final Map<String, ServerLevel> levels = new LinkedHashMap<>();
     private final Set<String> dimKeys;
     private final TileStore store;
-    private final @Nullable TileRenderer renderer;
+    private final @Nullable TileStore hitStore;
+    private final boolean oblique;
+    private final @Nullable MapRenderer renderer;
     private final ClaimsLayer claims = new ClaimsLayer();
     private final boolean claimsEnabled;
     private final PlayersLayer players;
@@ -47,12 +53,27 @@ public final class WebMapService implements WebServer.Source {
             }
         }
         this.dimKeys = levels.keySet().stream().map(TileStore::dimKey).collect(java.util.stream.Collectors.toUnmodifiableSet());
-        this.store = new TileStore(server.getWorldPath(LevelResource.ROOT).resolve(WebMapMod.MOD_ID).resolve("tiles"));
+        Path root = server.getWorldPath(LevelResource.ROOT).resolve(WebMapMod.MOD_ID);
         this.zoomOutLevels = WebMapConfig.ZOOM_OUT_LEVELS.get();
-        this.renderer = WebMapConfig.RENDER_ENABLED.get()
-                ? new TileRenderer(Map.copyOf(levels), store, zoomOutLevels, WebMapConfig.MAX_CHUNKS_PER_SECOND.get(),
-                        WebMapConfig.SCAN_INTERVAL_SECONDS.get())
-                : null;
+        this.oblique = WebMapConfig.STYLE.get() == WebMapConfig.Style.DIORAMA;
+        if (oblique) {
+            ObliqueTileRenderer r = new ObliqueTileRenderer(Map.copyOf(levels), root.resolve("diorama"), zoomOutLevels,
+                    WebMapConfig.MAX_CHUNKS_PER_SECOND.get(), WebMapConfig.SCAN_INTERVAL_SECONDS.get(),
+                    WebMapConfig.DOWNLOAD_CLIENT_ASSETS.get());
+            this.store = r.tiles();
+            this.hitStore = r.hits();
+            this.renderer = WebMapConfig.RENDER_ENABLED.get() ? r : null;
+            if (renderer == null) {
+                r.stop();
+            }
+        } else {
+            this.store = new TileStore(root.resolve("tiles"));
+            this.hitStore = null;
+            this.renderer = WebMapConfig.RENDER_ENABLED.get()
+                    ? new TileRenderer(Map.copyOf(levels), store, zoomOutLevels, WebMapConfig.MAX_CHUNKS_PER_SECOND.get(),
+                            WebMapConfig.SCAN_INTERVAL_SECONDS.get())
+                    : null;
+        }
         this.claimsEnabled = WebMapConfig.SHOW_CLAIMS.get();
         if (claimsEnabled) {
             claims.start();
@@ -103,7 +124,7 @@ public final class WebMapService implements WebServer.Source {
         }
     }
 
-    public @Nullable TileRenderer renderer() {
+    public @Nullable MapRenderer renderer() {
         return renderer;
     }
 
@@ -123,7 +144,19 @@ public final class WebMapService implements WebServer.Source {
         JsonObject o = new JsonObject();
         o.addProperty("name", server.getMotd());
         o.addProperty("minecraftVersion", SharedConstants.getCurrentVersion().getName());
-        o.addProperty("tileSize", TileMath.TILE_SIZE);
+        o.addProperty("tileSize", oblique ? ObliqueTiles.PIXELS : TileMath.TILE_SIZE);
+        JsonObject projection = new JsonObject();
+        if (oblique) {
+            double pitch = Math.toRadians(ObliqueRenderer.DEFAULT_PITCH);
+            projection.addProperty("type", "oblique");
+            projection.addProperty("sin", Math.sin(pitch));
+            projection.addProperty("cos", Math.cos(pitch));
+            projection.addProperty("tileUnits", ObliqueTiles.TILE_UNITS);
+            projection.addProperty("pixelsPerUnit", ObliqueTiles.PIXELS / ObliqueTiles.TILE_UNITS);
+        } else {
+            projection.addProperty("type", "topdown");
+        }
+        o.add("projection", projection);
         o.addProperty("zoomOutLevels", zoomOutLevels);
         o.addProperty("claims", claimsAvailable());
         o.addProperty("players", players.enabled());
@@ -132,6 +165,7 @@ public final class WebMapService implements WebServer.Source {
             JsonObject d = new JsonObject();
             d.addProperty("id", id);
             d.addProperty("key", TileStore.dimKey(id));
+            d.addProperty("minY", levels.get(id).getMinBuildHeight());
             dims.add(d);
         }
         o.add("dimensions", dims);
@@ -153,6 +187,11 @@ public final class WebMapService implements WebServer.Source {
     @Override
     public Path tilePath(String dimKey, int zoom, int x, int y) {
         return store.path(dimKey, zoom, x, y);
+    }
+
+    @Override
+    public @Nullable Path hitPath(String dimKey, int zoom, int x, int y) {
+        return hitStore == null ? null : hitStore.path(dimKey, zoom, x, y);
     }
 
     @Override

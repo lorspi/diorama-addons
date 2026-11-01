@@ -31,7 +31,7 @@ import org.slf4j.Logger;
  * chunk storage ({@code ChunkMap.read}), which is asynchronous, includes pending writes and never touches
  * the server thread. Changed chunks are collected in {@link #markChunk} and processed every scan interval.
  */
-public final class TileRenderer {
+public final class TileRenderer implements MapRenderer {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final Pattern REGION_FILE = Pattern.compile("r\\.(-?\\d+)\\.(-?\\d+)\\.mca");
 

@@ -12,7 +12,11 @@ public final class WebMapConfig {
     public static final ModConfigSpec.IntValue PORT;
     public static final ModConfigSpec.IntValue HTTP_THREADS;
 
+    public enum Style { DIORAMA, TOP_DOWN }
+
     public static final ModConfigSpec.BooleanValue RENDER_ENABLED;
+    public static final ModConfigSpec.EnumValue<Style> STYLE;
+    public static final ModConfigSpec.BooleanValue DOWNLOAD_CLIENT_ASSETS;
     public static final ModConfigSpec.IntValue MAX_CHUNKS_PER_SECOND;
     public static final ModConfigSpec.IntValue ZOOM_OUT_LEVELS;
     public static final ModConfigSpec.IntValue SCAN_INTERVAL_SECONDS;
@@ -36,6 +40,13 @@ public final class WebMapConfig {
 
         b.push("render");
         RENDER_ENABLED = b.comment("Render tiles in the background.").define("enabled", true);
+        STYLE = b.comment("DIORAMA: angled view with textures, sun and shadows, like the Diorama map.",
+                "TOP_DOWN: flat view with vanilla map colours (faster). Changing it renders everything again.")
+                .defineEnum("style", Style.DIORAMA);
+        DOWNLOAD_CLIENT_ASSETS = b.comment("DIORAMA style: download the official Minecraft client jar from Mojang once",
+                "(about 27 MB, checked against Mojang's SHA-1) to read block textures, which a server does not have.",
+                "Modded blocks use the textures in their own jars. If off or offline, vanilla blocks use map colours.")
+                .define("downloadClientAssets", true);
         MAX_CHUNKS_PER_SECOND = b.comment("Upper bound of chunks read and rendered per second. Lower it if the",
                 "server feels slow while tiles are generated.").defineInRange("maxChunksPerSecond", 200, 1, 10_000);
         ZOOM_OUT_LEVELS = b.comment("Number of zoomed-out levels generated (each halves the scale).")
