@@ -22,3 +22,13 @@ type = "required"
 versionRange = "[${minecraft_version},1.21.2)"
 ordering = "NONE"
 side = "BOTH"
+
+[[mixins]]
+config = "${mod_id}.mixins.json"
+
+[[dependencies.${mod_id}]]
+modId = "${mod_id_prefix}_claims_api"
+type = "required"
+versionRange = "*"
+ordering = "AFTER"
+side = "BOTH"
