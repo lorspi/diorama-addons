@@ -1,0 +1,22 @@
+:root {
+  --panel-bg: rgba(20, 22, 26, 0.85);
+  --panel-fg: #e8e8e8;
+  --map-bg: #0f1012;
+}
+html, body { margin: 0; height: 100%; background: var(--map-bg); font: 14px/1.4 system-ui, sans-serif; }
+#map { position: absolute; inset: 0; background: var(--map-bg); }
+.leaflet-container { background: var(--map-bg); }
+.panel {
+  position: absolute; z-index: 1000; background: var(--panel-bg); color: var(--panel-fg);
+  border-radius: 6px; padding: 6px 10px; box-shadow: 0 1px 4px rgba(0,0,0,.4);
+}
+#toolbar { top: 10px; left: 56px; display: flex; gap: 10px; align-items: center; max-width: calc(100% - 140px); }
+#toolbar select { background: #2a2d33; color: var(--panel-fg); border: 1px solid #444; border-radius: 4px; padding: 2px 4px; }
+#title { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#coords { bottom: 10px; left: 10px; font-variant-numeric: tabular-nums; }
+.claim-label {
+  background: rgba(0,0,0,.6); color: #fff; border: none; box-shadow: none; font-size: 12px; padding: 1px 5px;
+}
+.claim-label::before { display: none; }
+.player-label { font-weight: 600; }
+.leaflet-tile { image-rendering: pixelated; }
