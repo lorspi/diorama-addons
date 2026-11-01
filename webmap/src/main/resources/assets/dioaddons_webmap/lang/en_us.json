@@ -1,0 +1,12 @@
+{
+  "dioaddons_webmap.cmd.not_running": "The web map is not running.",
+  "dioaddons_webmap.cmd.http_on": "Web server listening on %s:%s",
+  "dioaddons_webmap.cmd.http_off": "Web server is not running (disabled or port in use, see the log).",
+  "dioaddons_webmap.cmd.render_off": "Tile rendering is disabled in the config.",
+  "dioaddons_webmap.cmd.render_status": "Render queue: %s regions, %s zoomed-out tiles. Rendered %s chunks, wrote %s tiles. Now: %s",
+  "dioaddons_webmap.cmd.layers": "Dimensions: %s. Claims layer: %s. Players: %s",
+  "dioaddons_webmap.cmd.yes": "yes",
+  "dioaddons_webmap.cmd.no": "no",
+  "dioaddons_webmap.cmd.render_started": "Full re-render queued for %s.",
+  "dioaddons_webmap.cmd.cleared": "Tile cache cleared; everything will be rendered again."
+}

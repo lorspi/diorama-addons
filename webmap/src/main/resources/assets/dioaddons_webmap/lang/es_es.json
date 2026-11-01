@@ -1,0 +1,12 @@
+{
+  "dioaddons_webmap.cmd.not_running": "El mapa web no está en marcha.",
+  "dioaddons_webmap.cmd.http_on": "Servidor web escuchando en %s:%s",
+  "dioaddons_webmap.cmd.http_off": "El servidor web no está en marcha (desactivado o puerto ocupado, mira el log).",
+  "dioaddons_webmap.cmd.render_off": "El renderizado de tiles está desactivado en la configuración.",
+  "dioaddons_webmap.cmd.render_status": "Cola de renderizado: %s regiones, %s tiles alejados. Renderizados %s chunks, escritos %s tiles. Ahora: %s",
+  "dioaddons_webmap.cmd.layers": "Dimensiones: %s. Capa de claims: %s. Jugadores: %s",
+  "dioaddons_webmap.cmd.yes": "sí",
+  "dioaddons_webmap.cmd.no": "no",
+  "dioaddons_webmap.cmd.render_started": "Re-renderizado completo en cola para %s.",
+  "dioaddons_webmap.cmd.cleared": "Caché de tiles vaciada; se renderizará todo de nuevo."
+}

@@ -30,3 +30,10 @@ type = "optional"
 versionRange = "*"
 ordering = "NONE"
 side = "BOTH"
+
+[[dependencies.${mod_id}]]
+modId = "${mod_id_prefix}_claims_api"
+type = "required"
+versionRange = "*"
+ordering = "AFTER"
+side = "BOTH"
