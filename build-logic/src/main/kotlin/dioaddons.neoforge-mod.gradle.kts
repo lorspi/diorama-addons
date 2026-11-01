@@ -36,11 +36,24 @@ neoForge {
         register("client") {
             client()
             gameDirectory.set(project.file("run/client"))
+            // Optional: ./gradlew :claims:runClient -Pdioaddons.join=127.0.0.1:25565 -Pdioaddons.username=Tester
+            providers.gradleProperty("dioaddons.join").orNull?.let {
+                programArgument("--quickPlayMultiplayer")
+                programArgument(it)
+            }
+            providers.gradleProperty("dioaddons.username").orNull?.let {
+                programArgument("--username")
+                programArgument(it)
+            }
         }
         register("server") {
             server()
             gameDirectory.set(project.file("run/server"))
             programArgument("--nogui")
+        }
+        register("gameTestServer") {
+            type.set("gameTestServer")
+            gameDirectory.set(project.file("run/gametest"))
         }
         configureEach {
             systemProperty("neoforge.enabledGameTestNamespaces", modId)
@@ -53,6 +66,9 @@ neoForge {
             sourceSet(sourceSets.main.get())
         }
     }
+
+    // Plain JUnit tests may use Minecraft's libraries (DataFixerUpper, Gson). Tests must not bootstrap the game.
+    addModdingDependenciesTo(sourceSets.test.get())
 }
 
 // Accept the EULA for the local development server only.
