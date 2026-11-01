@@ -195,6 +195,19 @@ Research and the list of Diorama entry points: [clientmap-research.md](clientmap
     `DioramaCompat.SUPPORTED` (now `0.6.0+neoforge-1.21.1`); the dependency is optional with any version
     so other versions do not stop the game from loading.
 
+## Section 10 — open source
+
+35. **Versions and tags per mod.** Each module keeps `mod_version` in its own `gradle.properties`;
+    releases are tagged `<module>-v<semver>` (`claims-v0.1.0`, `claims-api-v0.1.0`...). One
+    `CHANGELOG.md` with a section per module.
+36. **Release workflow** (`.github/workflows/release.yml`) runs on those tags:
+    `.github/scripts/release_info.py` checks the tag format, that `mod_version` matches and that the
+    changelog has an entry, then the mod is built and tested and `gh release create` publishes its jar
+    with the changelog entry as notes. Only GitHub's own CLI is used, no third-party release action.
+    Modrinth/CurseForge publishing is left for later.
+37. **claims-api is released as its own tag** for API consumers, even though players never install it
+    separately (it is bundled in the other jars).
+
 ## Assumptions to review
 
 - The GitHub organisation/repository URL is not set yet, so `issueTrackerURL`

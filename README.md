@@ -1,83 +1,107 @@
 # Diorama Addons
 
-A set of **independent** NeoForge mods for Minecraft 1.21.1 that integrate with
-each other when installed together. Every mod builds its own jar and works on
-its own.
+Land claims, a web map and shared maps for Minecraft 1.21.1 on NeoForge. Four **independent** mods: each
+one builds its own jar and works alone, and they work together when installed side by side.
 
-| Mod | Mod ID | Side | Status |
+| Mod | Mod ID | Install on | What it does |
 |---|---|---|---|
-| Claims API | `dioaddons_claims_api` | Library (bundled inside the other jars) | ✅ Read-only API |
-| Claims | `dioaddons_claims` | Server (required) + client (optional GUI) | ✅ Phase 1: claims, friends, permissions, GUI, commands, protection |
-| Web Map | `dioaddons_webmap` | Server only | ✅ Phase 2: tiles, claims layer, optional players |
-| Client Map | `dioaddons_clientmap` | Server + client, integrates with [Diorama](https://github.com/SunkenInTime/diorama) 0.6.0 | ✅ Phase 3: claims, shared explored map, shared waypoints, player positions |
+| [Claims](#claims) | `dioaddons_claims` | Server (required), client (optional, for the screen) | Protect land chunk by chunk, add friends, set permissions |
+| [Web Map](#web-map) | `dioaddons_webmap` | Server only | Live world map in the browser, with claims |
+| [Client Map](#client-map-diorama) | `dioaddons_clientmap` | Server and clients with [Diorama](https://modrinth.com/mod/diorama-map) | Claims, shared explored map, shared waypoints and positions in Diorama |
+| Claims API | `dioaddons_claims_api` | Nothing to do: bundled inside the other jars | Small read-only API other mods can use |
 
-## Requirements
+Players **without any of these mods can join** a server that has them; everything can also be done with
+commands.
 
-- Minecraft **1.21.1**
-- NeoForge **21.1.265** or newer
+## Requirements and installation
 
-## Building
-
-Requires a JDK to run Gradle; Java 21 is provisioned automatically through
-Gradle toolchains if it is not installed.
-
-```sh
-./gradlew build                 # builds every mod and runs the tests
-./gradlew :claims:runServer     # starts a development server with one mod
-./gradlew :claims:runClient     # starts a development client
-```
-
-Jars are written to `<module>/build/libs/`.
+- Minecraft **1.21.1** with **NeoForge 21.1.265** or newer.
+- Download the jars from [Releases](../../releases) (each mod has its own, tagged `claims-v…`,
+  `webmap-v…`, `clientmap-v…`) and put them in the `mods` folder of the server, and of the clients that
+  need them (see the table).
+- Client Map on the client needs **Diorama 0.6.0** (`0.6.0+neoforge-1.21.1`). Other Diorama versions are
+  detected and left alone.
 
 ## Claims
 
-Protect your land chunk by chunk, add friends and decide exactly what each of them can do.
+![Claims screen with the members tab](docs/images/claims-gui.png)
 
-- Open the screen with **G** (configurable in Controls) or `/claims menu`.
-- Left click or drag on the grid to claim free chunks or release your own; right click a claim to select it.
-- Side panel: your claims and limits, rename/delete, **Members** tab (add friends, templates *Visitor*,
-  *Member*, *Trusted*, per-permission toggles) and **Public** tab (what everyone else can do, plus PvP,
-  explosions, fire spread and mob griefing).
-- Players without the mod can join and use the commands: `/claim`, `/unclaim`, `/claims help`.
+- The unit is the **chunk**. Chunks of a claim touch each other; each player has limits on chunks and
+  claims (being a friend in someone else's claim does not count).
+- **Friends** get their own permissions, from templates (*Visitor*, *Member*, *Trusted*) or one by one.
+  **Public** permissions apply to everyone else, plus claim settings: PvP, explosions, fire spread and mob
+  griefing.
+- Protects breaking and placing, doors and redstone, containers (vanilla and modded), item use, entities,
+  animals, farmland, explosions, fire, fluids and pistons crossing the border, and mob griefing.
+- Open the screen with **G** (change it in Controls) or `/claims menu`. Left click or drag to claim or
+  release; right click to select a claim.
 
-See [docs/claims-permissions.md](docs/claims-permissions.md) for every permission and command.
+| Command | |
+|---|---|
+| `/claim [name]` · `/unclaim` | Claim or release the chunk you stand in |
+| `/claims list` · `/claims info` | Your claims and limits · the claim you stand in |
+| `/claims rename <name>` · `/claims delete` | Edit the claim you stand in |
+| `/claims trust <player> [visitor\|member\|trusted]` · `/claims untrust <player>` | Friends |
+| `/claims permission public <permission> <true\|false>` | What everyone may do, and claim settings |
+| `/claims permission member <player> <permission> <true\|false>` | One friend's permission |
+| `/claims permission template <player> <template>` | Apply a template |
+| `/claims admin bypass\|list [player]\|delete\|unclaim` | Operators |
+
+Config: `serverconfig/dioaddons_claims-server.toml` in the world. Details: [permissions and
+commands](docs/claims-permissions.md).
 
 ## Web Map
 
-A live map of the world in the browser, served by the game server itself. Players install nothing.
+![Web map with claims](docs/images/webmap-claims.png)
 
-- Open `http://<server>:8123/` (port and bind address in `config/dioaddons_webmap-common.toml`).
-- Tiles are rendered in the background from the saved world, at low priority and with a chunks-per-second
-  cap; only changed chunks are redrawn.
-- With Claims installed, claims are drawn with a colour per owner and a label (name and owner). Members and
-  permissions are never published.
-- Player positions are **off by default** (`layers.showPlayers`).
-- `/webmap status`, `/webmap render [dimension]`, `/webmap clearcache` for operators.
+- Open `http://<server>:8123/`. Players install nothing.
+- Tiles are drawn in the background from the saved world, with relief shading, at low priority and with a
+  chunks-per-second cap; only changed chunks are redrawn. The server keeps running if the port is taken.
+- With Claims installed, claims show with a colour per owner and a label with the name and owner. Members
+  and permissions are never published. Player positions are **off by default**.
 
-See [docs/webmap-api.md](docs/webmap-api.md).
+| Command (operators) | |
+|---|---|
+| `/webmap status` | Web server, render queue, layers |
+| `/webmap render [dimension]` | Render everything again |
+| `/webmap clearcache` | Delete all tiles and start over |
 
-## Client Map (Diorama integration)
+Config: `config/dioaddons_webmap-common.toml` (port, bind address, render speed, dimensions, layers).
+API: [docs/webmap-api.md](docs/webmap-api.md).
 
-Adds server-shared data to the [Diorama](https://modrinth.com/mod/diorama-map) map. Install it on the
-server and on clients that use Diorama **0.6.0** (`0.6.0+neoforge-1.21.1`); other Diorama versions are
-detected and left alone.
+## Client Map (Diorama)
 
-- **Claims** on Diorama's map and minimap, coloured by owner, with "claim · owner" on hover (needs Claims
-  on the server). With Claims also on the client, right-click the map to **claim or release a chunk**.
-- **Shared explored map:** chunks explored by others are drawn on your map, sent in the background.
-- **Shared waypoints:** right-click → *Add shared waypoint here*; delete from the pin's menu; or
-  `/sharedwaypoint add|list|rename|remove`.
-- **Player positions** of your pool on the map and radar; hide yours with `/maplocation hide`.
-- Server config (`config/dioaddons_clientmap-common.toml`): explored map and locations each `DISABLED`,
-  `GLOBAL` or `GROUPS`. Groups: `/mapgroup create|invite|join|leave|kick|info`.
-- Client commands: `/clientmap status`, `/clientmap resync`.
+| | |
+|---|---|
+| ![Claims and a shared waypoint on Diorama's map](docs/images/diorama-claims-waypoints.png) | ![Terrain explored by another player](docs/images/diorama-shared-explored.png) |
 
-## Testing
+- **Claims** on Diorama's map and minimap, coloured by owner, "claim · owner" on hover. With Claims also on
+  the client, right-click the map to **claim or release a chunk**.
+- **Shared explored map:** places other players explored appear on your map, sent in the background.
+- **Shared waypoints:** right-click → *Add shared waypoint here*; delete from the pin's menu.
+- **Player positions** of your group on the map and radar. Hide yours with `/maplocation hide`.
+- The server decides, separately for the explored map and for locations: off, shared by everyone, or by
+  groups of friends.
+
+| Command | |
+|---|---|
+| `/mapgroup create <name>` · `invite <player>` · `join <name>` · `leave` · `kick <player>` · `info` | Groups of friends |
+| `/sharedwaypoint add <name>` · `list` · `rename <old> <new>` · `remove <name>` | Shared waypoints |
+| `/maplocation show\|hide` | Share or hide your position |
+| `/clientmap status` · `/clientmap resync` (client) | Sync state · send the explored map again |
+
+Config: `config/dioaddons_clientmap-common.toml` on the server. How it hooks into Diorama:
+[docs/clientmap-research.md](docs/clientmap-research.md).
+
+## Building
 
 ```sh
-./gradlew build                          # unit tests
-./gradlew :claims:runGameTestServer      # in-world tests (protection, persistence, API)
+./gradlew build                          # all mods + unit tests
+./gradlew :claims:runGameTestServer      # in-world tests for claims
+./gradlew :claims:runServer              # development server with one mod
 ```
+
+Jars are written to `<module>/build/libs/`. More in [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## Documentation
 
@@ -85,7 +109,9 @@ detected and left alone.
 - [Claims permissions and commands](docs/claims-permissions.md)
 - [Web map HTTP API](docs/webmap-api.md)
 - [Diorama research and integration plan](docs/clientmap-research.md)
+- [Changelog](CHANGELOG.md)
 
 ## License
 
-[MIT](LICENSE). See [THIRD_PARTY.md](THIRD_PARTY.md) for third-party notices.
+[MIT](LICENSE). Third-party notices (Leaflet) in [THIRD_PARTY.md](THIRD_PARTY.md). Diorama is a separate
+project by its own authors and is not included.
