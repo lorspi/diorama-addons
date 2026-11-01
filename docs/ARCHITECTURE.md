@@ -46,16 +46,74 @@ template expanded by `processResources`.
 4. **Optional dependencies only.** In `neoforge.mods.toml`, `webmap` and
    `clientmap` declare `dioaddons_claims` as `type = "optional"`. No mod
    requires another.
-5. **`claims-api` will be bundled (jar-in-jar) by every mod that uses it**
-   (planned for Phase 1). This way `webmap` can load the API classes even when
-   `claims` is not installed; NeoForge's JarJar picks a single copy when several
-   mods ship it. Integration code that touches the API at runtime still lives in
-   separate classes guarded by `ModList.get().isLoaded(...)`.
+5. **`claims-api` is bundled (Jar-in-Jar) by every mod that uses it.** `claims`
+   ships it today; `webmap` and `clientmap` will too. NeoForge's JarJar keeps a
+   single copy (highest version). The API is plain Java (no Minecraft types:
+   dimensions are ids like `minecraft:overworld`, chunks are packed longs), and
+   the implementation is published through `ClaimsApiProvider` when a server
+   with `claims` starts. In dev runs the API is loaded as its own mod from its
+   source set.
 6. **Development server EULA.** The `runServer` task writes `eula=true` into
    `<module>/run/server/` (development only, git-ignored).
 7. **`webmap` is not marked as dedicated-server only.** It also runs in the
    integrated server (singleplayer/LAN) so it can be tested from `runClient`.
    It simply does nothing on the client side.
+
+## Phase 1 — claims
+
+### Layers
+
+| Package | Depends on Minecraft | Content |
+|---|---|---|
+| `claims.core` | no | `Permission`, `PermissionTemplate`, `Claim`, `ClaimStore` (every rule), `PermissionResolver` |
+| `claims.data` | DFU only (codecs), `SavedData` | Versioned codecs, `ClaimSavedData` |
+| `claims.server` | yes | `ClaimsService` (state per running server, API implementation, GUI sync), `ServerLang` |
+| `claims.protection` | yes | Event handlers and hooks called by mixins |
+| `claims.network` | yes | Optional payloads and server-side validation |
+| `claims.command` | yes | Brigadier commands |
+| `claims.client` | yes (client only) | Key binding, screen |
+
+### Decisions
+
+8. **Permission set.** The suggested list was kept. Permissions are split into
+   *player* permissions (given to members/public) and *claim* settings (`pvp`,
+   `explosions`, `fire_spread`, `mob_griefing`), which are stored in the public
+   set and apply to everyone. See `claims-permissions.md`.
+9. **Members get the union of their permissions and the public ones.** The
+   resolution order owner → member → public is kept, but a friend never has
+   fewer rights than a stranger.
+10. **Limits are per player, global for the server** (config), as confirmed.
+    Being a member of other claims does not count.
+11. **Contiguity.** With `requireContiguous`, new chunks join an adjacent claim of
+    the same owner, and releasing a chunk that would split a claim is refused.
+    Batch operations (GUI drag) retry chunks until no more progress is possible,
+    so the selection order does not matter.
+12. **Storage.** One `SavedData` file in the overworld data folder
+    (`data/dioaddons_claims.dat`) with `format_version`. Permissions are stored
+    by name, unknown names are ignored; a newer format refuses to load instead of
+    overwriting data.
+13. **Fire and fluids use mixins** because NeoForge 21.1 has no event for them:
+    `FireBlock.checkBurnOut` / `FireBlock.getIgniteOdds(LevelReader, BlockPos)`
+    and `FlowingFluid.canSpreadTo`. Everything else uses NeoForge events
+    (`BlockEvent.BreakEvent`, `EntityPlaceEvent`, `PlayerInteractEvent.*`,
+    `AttackEntityEvent`, `LivingIncomingDamageEvent`, `FarmlandTrampleEvent`,
+    `BlockToolModificationEvent`, `ExplosionEvent.Detonate`, `PistonEvent.Pre`,
+    `FluidPlaceBlockEvent`, `EntityMobGriefingEvent`, `LivingDestroyBlockEvent`).
+14. **Server-side translations.** Messages are `translatableWithFallback`
+    components whose fallback is translated on the server with the player's
+    client language (bundled `en_us`/`es_es`). Clients with the mod use their own
+    language files; vanilla clients still read a proper message.
+15. **Networking.** All payloads are registered with `.optional()`. The client
+    sends requests (`request_state`, `claim_chunks`, `edit_claim`,
+    `unsubscribe`); the server validates ownership, limits, names, member counts
+    and that chunks are within `guiMaxRadius` of the player, then answers with a
+    full `state` payload. Players with the screen open are "subscribed" and get a
+    fresh state when claims change or when they move to another chunk.
+16. **GUI map has no terrain.** The grid shows ownership colours only; drawing
+    terrain is left for `clientmap`/Diorama.
+17. **GameTests ship in the main source set** (`claims.gametest`). NeoForge only
+    registers game tests in development, so they are inert in production. Run them
+    with `./gradlew :claims:runGameTestServer`.
 
 ## Assumptions to review
 

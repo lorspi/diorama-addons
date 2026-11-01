@@ -6,8 +6,8 @@ its own.
 
 | Mod | Mod ID | Side | Status |
 |---|---|---|---|
-| Claims API | `dioaddons_claims_api` | Library | 🚧 Phase 0 (empty skeleton) |
-| Claims | `dioaddons_claims` | Server (required) + client (optional GUI) | 🚧 Phase 0 (empty skeleton) |
+| Claims API | `dioaddons_claims_api` | Library (bundled inside the other jars) | ✅ Read-only API |
+| Claims | `dioaddons_claims` | Server (required) + client (optional GUI) | ✅ Phase 1: claims, friends, permissions, GUI, commands, protection |
 | Web Map | `dioaddons_webmap` | Server only | 🚧 Phase 0 (empty skeleton) |
 | Client Map | `dioaddons_clientmap` | Server + client, integrates with [Diorama](https://github.com/SunkenInTime/diorama) | 🚧 Phase 0 (empty skeleton) |
 
@@ -29,9 +29,30 @@ Gradle toolchains if it is not installed.
 
 Jars are written to `<module>/build/libs/`.
 
+## Claims
+
+Protect your land chunk by chunk, add friends and decide exactly what each of them can do.
+
+- Open the screen with **G** (configurable in Controls) or `/claims menu`.
+- Left click or drag on the grid to claim free chunks or release your own; right click a claim to select it.
+- Side panel: your claims and limits, rename/delete, **Members** tab (add friends, templates *Visitor*,
+  *Member*, *Trusted*, per-permission toggles) and **Public** tab (what everyone else can do, plus PvP,
+  explosions, fire spread and mob griefing).
+- Players without the mod can join and use the commands: `/claim`, `/unclaim`, `/claims help`.
+
+See [docs/claims-permissions.md](docs/claims-permissions.md) for every permission and command.
+
+## Testing
+
+```sh
+./gradlew build                          # unit tests
+./gradlew :claims:runGameTestServer      # in-world tests (protection, persistence, API)
+```
+
 ## Documentation
 
 - [Architecture and design decisions](docs/ARCHITECTURE.md)
+- [Claims permissions and commands](docs/claims-permissions.md)
 
 ## License
 
