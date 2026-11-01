@@ -17,7 +17,8 @@ Each mod is versioned on its own with [Semantic Versioning](https://semver.org/)
 
 ### [Unreleased]
 
-- New library: top-down terrain shading in the style of the Diorama map. Bundled by the mods that use it.
+- New library: terrain shading in the style of the Diorama map, top-down (claims screen) and angled
+  (web map). Bundled by the mods that use it.
 
 ## claims
 
@@ -43,6 +44,13 @@ Each mod is versioned on its own with [Semantic Versioning](https://semver.org/)
 ## webmap
 
 ### [Unreleased]
+
+- New default style `DIORAMA`: the map is drawn at an angle like the Diorama map, from block textures,
+  with sun, shadows, sky occlusion and outlines. Claims are painted on the terrain they cover, with an edge
+  where the owner changes, and labels where they show. The mouse shows the real x, y, z and the claim.
+- Block textures: vanilla ones come from the official client jar, downloaded once from Mojang and checked
+  against its SHA-1 (`render.downloadClientAssets`); modded blocks use the textures in their own jars.
+- `render.style = TOP_DOWN` keeps the previous flat style.
 
 ### [0.1.0] - 2026-11-01
 

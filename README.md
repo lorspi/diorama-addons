@@ -57,10 +57,15 @@ commands](docs/claims-permissions.md).
 ![Web map with claims](docs/images/webmap-claims.png)
 
 - Open `http://<server>:8123/`. Players install nothing.
-- Tiles are drawn in the background from the saved world, with relief shading, at low priority and with a
-  chunks-per-second cap; only changed chunks are redrawn. The server keeps running if the port is taken.
-- With Claims installed, claims show with a colour per owner and a label with the name and owner. Members
-  and permissions are never published. Player positions are **off by default**.
+- Drawn at an angle **in the style of the Diorama map**: real block textures, sun and shadows, trees and
+  cliffs standing up. Tiles are rendered in the background from the saved world, at low priority and with
+  a chunks-per-second cap; only changed areas are redrawn. The server keeps running if the port is taken.
+- Vanilla textures come from the official Minecraft client jar, downloaded once from Mojang (about 27 MB,
+  checked against Mojang's SHA-1); modded blocks use the textures in their own jars. Set
+  `render.style = "TOP_DOWN"` for the older flat map that needs no download.
+- With Claims installed, claims are painted on the terrain with a colour per owner, an edge where the owner
+  changes and a label with the name and owner. Members and permissions are never published. Player
+  positions are **off by default**.
 
 | Command (operators) | |
 |---|---|

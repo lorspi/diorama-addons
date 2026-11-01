@@ -223,6 +223,25 @@ Research and the list of Diorama entry points: [clientmap-research.md](clientmap
     client are drawn; the rest stays dark. Sampling runs on the client thread; shading runs on a background
     thread; the picture is refreshed when the grid moves and every 5 seconds.
 
+40. **Web map in the Diorama style** (`render.style = DIORAMA`, default). `ObliqueRenderer` (render-core)
+    traces one ray per pixel through the blocks, in the y-z plane of the pixel's column: camera looking
+    north and down at 50°, map space `u = x`, `v = z·sin − y·cos`, tiles of 128 units at 4 px per unit like
+    Diorama. The hit face (top or south) is lit with the Diorama light model, with shadows traced in 3D
+    (40 blocks) and outlines where a neighbouring pixel is 1.5 blocks nearer. Light is cached per face.
+41. **Hit maps.** Next to each tile a PNG stores, per pixel, the block it shows (`z` relative to the tile
+    row's lowest visible z, `y` at half resolution). The page uses it to paint claims on the terrain they
+    really cover, to place claim labels where they show, and to show x/y/z under the mouse. Claims are
+    painted in the browser, so claim changes never re-render tiles.
+42. **Block colours on the server.** A dedicated server has no vanilla textures, so the official client jar
+    is downloaded once from Mojang (manifest → version → `downloads.client`, SHA-1 checked) into
+    `<server>/dioaddons_webmap/` on the render thread, never blocking start-up. Mod jars are read for modded
+    blocks. A small resolver follows block states → models → parents → face textures and tint indexes;
+    grass and foliage tints use the biome climate and the vanilla colour maps. Without the jar, vanilla
+    blocks fall back to map colours.
+43. **Invalidation.** A saved or unloaded chunk marks the tiles of its column that can show it (and the
+    next column east, where its shadows fall); the chunk is dropped from the renderer's cache before the
+    next tile. Tiles with nothing in view leave an `.empty` marker so restarts skip them.
+
 ## Assumptions to review
 
 - Repository: https://github.com/lorspi/diorama-addons (`issueTrackerURL` points to its issues).
