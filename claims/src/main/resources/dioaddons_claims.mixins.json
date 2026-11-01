@@ -1,0 +1,13 @@
+{
+  "required": true,
+  "package": "io.github.dioramaaddons.claims.mixin",
+  "compatibilityLevel": "JAVA_21",
+  "minVersion": "0.8",
+  "mixins": [
+    "FireBlockMixin",
+    "FlowingFluidMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 1
+  }
+}
