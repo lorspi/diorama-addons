@@ -74,9 +74,9 @@ Client Map connects your NeoForge 1.21.1 server with the [Diorama](https://modri
 | Where | Needed? |
 |---|---|
 | Server | **Required** — stores and shares the data |
-| Client | Optional — install it, together with **Diorama 0.6.0**, to see everything on the map |
+| Client | Optional — install it, together with **Diorama 0.7.0** (or 0.6.x), to see everything on the map |
 
-Requires **Minecraft 1.21.1**, **NeoForge 21.1.265 or newer** and, on the client, **Diorama `0.6.0+neoforge-1.21.1`**. Other Diorama versions are detected and left alone.
+Requires **Minecraft 1.21.1**, **NeoForge 21.1.265 or newer** and, on the client, **Diorama `0.7.0`, `0.6.1` or `0.6.0` (`+neoforge-1.21.1`)**. Other Diorama versions are detected and left alone.
 
 Optional: [Diorama Addons: Claims](https://modrinth.com/mod/diorama-addons-claims) on the server for claims, and on the client to claim from the map.
 
@@ -93,7 +93,7 @@ Server config: `config/dioaddons_clientmap-common.toml`.
 
 ## Known limitations
 
-- Supports **Diorama 0.6.0** only for now; each new Diorama release has to be checked.
+- Supports **Diorama 0.6.0, 0.6.1 and 0.7.0**; each new Diorama release has to be checked.
 - Shared waypoints are listed in Diorama's *Waystones* folder.
 - Shared explored chunks show the surface only (no caves).
 
