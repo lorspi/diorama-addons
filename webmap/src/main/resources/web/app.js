@@ -17,12 +17,14 @@
     en: {
       map: 'World Map', claims: 'Claims', players: 'Players', chat: 'Chat', online: 'Online',
       dimension: 'Dimension', joined: 'joined the game', left: 'left the game', noChat: 'No messages yet.',
-      nobody: 'Nobody is online.', hide: 'Hide', show: 'Show',
+      nobody: 'Nobody is online.', hide: 'Hide', show: 'Show', spawn: 'Spawn', toSpawn: 'Center the map on the spawn point',
+      layers: 'Layers',
     },
     es: {
       map: 'Mapa del mundo', claims: 'Terrenos', players: 'Jugadores', chat: 'Chat', online: 'Conectados',
       dimension: 'Dimensión', joined: 'entró al juego', left: 'salió del juego', noChat: 'Aún no hay mensajes.',
-      nobody: 'No hay nadie conectado.', hide: 'Ocultar', show: 'Mostrar',
+      nobody: 'No hay nadie conectado.', hide: 'Ocultar', show: 'Mostrar', spawn: 'Spawn', toSpawn: 'Centrar el mapa en el punto de aparición',
+      layers: 'Capas',
     },
   };
   const LANG = info.language && TEXT[info.language]
@@ -62,10 +64,15 @@
   let players = [];
   const hitCache = new Map(); // "level/x/y" -> Uint8ClampedArray (RGBA) or null
 
+  // What the visitor chose to see (only for layers the server publishes), remembered in this browser.
+  const shown = { claims: true, players: true, chat: true };
+  try { Object.assign(shown, JSON.parse(localStorage.getItem('webmap.layers') || '{}')); } catch (e) { /* ignore */ }
+  const saveShown = () => { try { localStorage.setItem('webmap.layers', JSON.stringify(shown)); } catch (e) { /* ignore */ } };
+  const claimsOn = () => info.claims && shown.claims;
+
   const vectorClaims = L.layerGroup();
   const labelsLayer = L.layerGroup();
   const playersLayer = L.layerGroup();
-  const overlays = {};
 
   // ------------------------------------------------------------------ hit maps (oblique)
   const zRef = (ty, level) => Math.floor((ty * UNITS0 * 2 ** level + current.minY * proj.cos) / proj.sin) - 1;
@@ -84,7 +91,7 @@
       const key = `${level}/${coords.x}/${coords.y}`;
       const paint = (data) => {
         canvas.getContext('2d').clearRect(0, 0, tileSize, tileSize);
-        if (data && info.claims && map.hasLayer(this)) paintClaims(canvas, data, coords.x, coords.y, level);
+        if (data && claimsOn()) paintClaims(canvas, data, coords.x, coords.y, level);
         done(null, canvas);
       };
       if (version === null && hitCache.has(key)) {
@@ -161,6 +168,7 @@
     clearTimeout(labelTimer);
     labelTimer = setTimeout(() => {
       labelsLayer.clearLayers();
+      if (!claimsOn()) return;
       for (const [c, p] of claimPositions) {
         if (!claims[c] || p.n === 0) continue;
         L.tooltip({ permanent: true, direction: 'center', className: 'claim-label' })
@@ -196,17 +204,54 @@
   }
 
   // ------------------------------------------------------------------ layers and controls
-  if (info.claims) {
-    overlays[CLAIMS] = OBLIQUE ? hitLayer : vectorClaims;
-    overlays[CLAIMS].addTo(map);
-    labelsLayer.addTo(map);
-  } else if (OBLIQUE) {
-    hitLayer.addTo(map); // still needed for coordinates
+  // The hit maps are always loaded (coordinates under the mouse); claims are painted on them when shown.
+  if (hitLayer) hitLayer.addTo(map);
+  if (claimsOn() && !OBLIQUE) vectorClaims.addTo(map);
+  if (info.players && shown.players) playersLayer.addTo(map);
+
+  // Layer check boxes: one per layer the server publishes.
+  const layersPanel = document.getElementById('layers');
+  function addCheck(key, label, apply) {
+    const row = document.createElement('label');
+    const box = document.createElement('input');
+    box.type = 'checkbox';
+    box.checked = shown[key];
+    box.addEventListener('change', () => { shown[key] = box.checked; saveShown(); apply(box.checked); });
+    row.append(box, ' ', label);
+    layersPanel.appendChild(row);
   }
-  if (info.players) { overlays[PLAYERS] = playersLayer; playersLayer.addTo(map); }
-  if (Object.keys(overlays).length) L.control.layers(null, overlays, { collapsed: false }).addTo(map);
-  map.on('overlayremove', e => { if (e.layer === overlays[CLAIMS]) map.removeLayer(labelsLayer); });
-  map.on('overlayadd', e => { if (e.layer === overlays[CLAIMS]) updateLabels(); });
+  if (info.claims) {
+    addCheck('claims', CLAIMS, on => {
+      if (!OBLIQUE) { if (on) vectorClaims.addTo(map); else map.removeLayer(vectorClaims); }
+      if (hitLayer) { claimPositions.clear(); repaintHits(); }
+      if (!on) labelsLayer.clearLayers();
+      if (on) drawVectorClaims();
+      updateLabels();
+    });
+  }
+  if (info.players) {
+    addCheck('players', PLAYERS, on => { if (on) playersLayer.addTo(map); else map.removeLayer(playersLayer); });
+  }
+  if (info.chat) addCheck('chat', t('chat'), () => updateSideTabs());
+  if (layersPanel.children.length) {
+    const head = document.createElement('strong');
+    head.textContent = t('layers');
+    layersPanel.prepend(head);
+    layersPanel.hidden = false;
+    L.DomEvent.disableClickPropagation(layersPanel);
+  }
+
+  /** Repaints the claims on the hit tiles already loaded, without fetching them again. */
+  function repaintHits() {
+    for (const key in hitLayer._tiles) {
+      const tile = hitLayer._tiles[key];
+      const { x, y, z } = tile.coords;
+      const data = hitCache.get(`${NATIVE - z}/${x}/${y}`);
+      const ctx = tile.el.getContext('2d');
+      ctx.clearRect(0, 0, tileSize, tileSize);
+      if (data && claimsOn()) paintClaims(tile.el, data, x, y, NATIVE - z);
+    }
+  }
 
   const select = document.getElementById('dimension');
   for (const d of info.dimensions) {
@@ -216,13 +261,29 @@
     select.appendChild(opt);
   }
 
+  // Spawn point: a marker in the overworld and a button that centres the map on it.
+  const spawnDim = info.dimensions.find(d => d.id === 'minecraft:overworld') || info.dimensions[0];
+  const spawnY = info.spawn.y === undefined ? 64 : info.spawn.y;
+  const spawnLayer = L.layerGroup();
+  L.circleMarker(toLatLng(info.spawn.x, spawnY, info.spawn.z), {
+    radius: 5, color: '#111', weight: 2, fillColor: '#facc15', fillOpacity: 1,
+  }).bindTooltip(t('spawn'), { direction: 'top', offset: [0, -5] }).addTo(spawnLayer);
+  function goToSpawn() {
+    if (current !== spawnDim) setDimension(spawnDim);
+    map.setView(toLatLng(info.spawn.x, spawnY, info.spawn.z), Math.max(map.getZoom(), NATIVE - 1));
+  }
+  const spawnButton = document.getElementById('spawn');
+  spawnButton.textContent = `⌂ ${t('spawn')}`;
+  spawnButton.title = t('toSpawn');
+  spawnButton.addEventListener('click', goToSpawn);
+
   // URL hash: #<dimension>/<u>/<v>/<zoom>
   const hash = decodeURIComponent(location.hash.slice(1)).split('/');
   current = info.dimensions.find(d => d.id === hash[0]) || info.dimensions[0];
   if (hash.length === 4 && !isNaN(+hash[1])) {
     map.setView(L.latLng(-(+hash[2]), +hash[1]), +hash[3]);
   } else {
-    map.setView(toLatLng(info.spawn.x, 64, info.spawn.z), NATIVE);
+    map.setView(toLatLng(info.spawn.x, spawnY, info.spawn.z), NATIVE);
   }
 
   function setDimension(dim) {
@@ -239,6 +300,7 @@
     if (hitLayer) hitLayer.redraw();
     drawVectorClaims();
     drawPlayers();
+    if (dim === spawnDim) spawnLayer.addTo(map); else map.removeLayer(spawnLayer);
     updateHash();
   }
   select.addEventListener('change', () => setDimension(info.dimensions.find(d => d.id === select.value)));
@@ -254,7 +316,7 @@
     const b = blockAt(e.latlng);
     if (!b) { coords.textContent = '–'; return; }
     let text = b.y === null ? `x ${b.x}, z ${b.z}` : `x ${b.x}, y ${b.y}, z ${b.z}`;
-    const c = claimByChunk.get(`${Math.floor(b.x / 16)},${Math.floor(b.z / 16)}`);
+    const c = claimsOn() ? claimByChunk.get(`${Math.floor(b.x / 16)},${Math.floor(b.z / 16)}`) : undefined;
     if (c !== undefined) text += ` · ${claims[c].name} (${claims[c].owner})`;
     coords.textContent = text;
   });
@@ -280,6 +342,7 @@
     if (OBLIQUE) return;
     vectorClaims.clearLayers();
     labelsLayer.clearLayers();
+    if (!claimsOn()) return;
     for (const c of claims) {
       if (c.dimension !== current.id) continue;
       const tip = `<strong>${escapeHtml(c.name)}</strong><br>${escapeHtml(c.owner)}`;
@@ -303,7 +366,7 @@
   }
   function updateLabels() {
     if (!info.claims) return;
-    const show = map.getZoom() >= NATIVE - 1 && map.hasLayer(overlays[CLAIMS]);
+    const show = map.getZoom() >= NATIVE - 1 && claimsOn();
     if (show && !map.hasLayer(labelsLayer)) labelsLayer.addTo(map);
     if (!show && map.hasLayer(labelsLayer)) map.removeLayer(labelsLayer);
   }
@@ -377,6 +440,21 @@
   }
   if (info.chat) addTab('chat', t('chat'), chatList);
   if (info.online) addTab('online', t('online'), onlineList);
+  /** Shows the tabs the visitor wants (the chat can be hidden with its check box). */
+  function updateSideTabs() {
+    let visible = 0;
+    for (const p of panes) {
+      const on = p.id !== 'chat' || shown.chat;
+      p.button.hidden = !on;
+      if (on) visible++;
+    }
+    side.hidden = visible === 0;
+    const selected = panes.find(p => p.button.getAttribute('aria-selected') === 'true');
+    if (!selected || selected.button.hidden) {
+      const first = panes.find(p => !p.button.hidden);
+      if (first) selectTab(first.id);
+    }
+  }
   if (panes.length) {
     const toggle = document.createElement('button');
     toggle.type = 'button';
@@ -400,6 +478,7 @@
     selectTab(panes.some(p => p.id === saved) ? saved : panes[0].id);
     setToggle();
     side.hidden = false;
+    updateSideTabs();
     L.DomEvent.disableClickPropagation(side);
     L.DomEvent.disableScrollPropagation(side);
   }

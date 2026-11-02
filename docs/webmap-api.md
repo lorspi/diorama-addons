@@ -67,7 +67,7 @@ green = `z − zRef` (16 bits), blue = `(y − minY) / 2`, where
   "online": true,
   "chat": false,
   "dimensions": [{"id": "minecraft:overworld", "key": "minecraft~overworld", "minY": -64}],
-  "spawn": {"x": -16, "z": 16}
+  "spawn": {"x": -16, "y": 72, "z": 16}
 }
 ```
 

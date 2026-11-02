@@ -28,12 +28,18 @@ import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.server.level.ServerPlayer;
+import io.github.dioramaaddons.webmap.network.WebSettings;
+import io.github.dioramaaddons.webmap.render.LiveChunkStore;
+import io.github.dioramaaddons.webmap.render.LiveChunks;
 import net.minecraft.world.level.storage.LevelResource;
 import org.jetbrains.annotations.Nullable;
 
 /** Web map state for one running server. */
 public final class WebMapService implements WebServer.Source {
     private static volatile @Nullable WebMapService instance;
+    private record Early(ServerLevel level, int x, int z, boolean generated) {}
+    private static final java.util.Queue<Early> EARLY = new java.util.concurrent.ConcurrentLinkedQueue<>();
 
     private final MinecraftServer server;
     private final Map<String, ServerLevel> levels = new LinkedHashMap<>();
@@ -46,6 +52,8 @@ public final class WebMapService implements WebServer.Source {
     private final PlayersLayer players = new PlayersLayer();
     private final ChatLayer chat = new ChatLayer();
     private final TileChangeLog changes = new TileChangeLog(8192);
+    private final LiveChunkStore liveStore = new LiveChunkStore();
+    private final @Nullable LiveChunks liveChunks;
     private final WebServer web;
     private final int zoomOutLevels;
     /** Settings that may change while running; rebuilt by {@link #applyConfig()}. */
@@ -72,7 +80,7 @@ public final class WebMapService implements WebServer.Source {
         if (oblique) {
             ObliqueTileRenderer r = new ObliqueTileRenderer(Map.copyOf(levels), root.resolve("diorama"), zoomOutLevels,
                     WebMapConfig.MAX_CHUNKS_PER_SECOND.get(), WebMapConfig.SCAN_INTERVAL_SECONDS.get(),
-                    WebMapConfig.DOWNLOAD_CLIENT_ASSETS.get());
+                    WebMapConfig.DOWNLOAD_CLIENT_ASSETS.get(), liveStore);
             this.store = r.tiles();
             this.hitStore = r.hits();
             this.renderer = WebMapConfig.RENDER_ENABLED.get() ? r : null;
@@ -84,9 +92,11 @@ public final class WebMapService implements WebServer.Source {
             this.hitStore = null;
             this.renderer = WebMapConfig.RENDER_ENABLED.get()
                     ? new TileRenderer(Map.copyOf(levels), store, zoomOutLevels, WebMapConfig.MAX_CHUNKS_PER_SECOND.get(),
-                            WebMapConfig.SCAN_INTERVAL_SECONDS.get())
+                            WebMapConfig.SCAN_INTERVAL_SECONDS.get(), liveStore)
                     : null;
         }
+        this.liveChunks = renderer == null ? null
+                : new LiveChunks(Map.copyOf(levels), liveStore, (dim, x, z, tag) -> renderer.markChunk(dim, x, z));
         store.reportTo(changes);
         if (hitStore != null) {
             hitStore.reportTo(changes);
@@ -100,8 +110,18 @@ public final class WebMapService implements WebServer.Source {
         return instance;
     }
 
+    /** A chunk loaded before the map started (spawn chunks). */
+    public static void loadedEarly(ServerLevel level, int chunkX, int chunkZ, boolean generated) {
+        EARLY.add(new Early(level, chunkX, chunkZ, generated));
+    }
+
     public static void start(MinecraftServer server) {
         WebMapService s = new WebMapService(server);
+        for (Early e; (e = EARLY.poll()) != null; ) {
+            if (e.level().getServer() == server) {
+                s.chunkLoaded(e.level(), e.x(), e.z(), e.generated());
+            }
+        }
         instance = s;
         if (s.renderer != null && WebMapConfig.RENDER_MISSING_ON_START.get()) {
             s.renderer.scan(null, false);
@@ -138,6 +158,7 @@ public final class WebMapService implements WebServer.Source {
     public static void stop() {
         WebMapService s = instance;
         instance = null;
+        EARLY.clear();
         if (s != null) {
             synchronized (s) {
                 s.web.stop();
@@ -151,11 +172,80 @@ public final class WebMapService implements WebServer.Source {
 
     /** Server thread. */
     public void tick() {
-        Live l = live;
-        if (l.claims()) {
-            claims.tick();
+        if (claims.tick()) {
+            // A claims provider started or stopped: the page must learn whether the layer exists.
+            live = buildLive();
         }
+        Live l = live;
         players.tick(server, l.positions(), l.online(), l.playerSeconds());
+        if (liveChunks != null) {
+            liveChunks.tick(server.getTickCount(), WebMapConfig.LIVE_CHECK_SECONDS.get() * 20,
+                    WebMapConfig.LIVE_BUDGET_MICROS.get() * 1000L);
+        }
+    }
+
+    /** A full chunk was loaded; {@code generated}: it just became full (new terrain). */
+    public void chunkLoaded(ServerLevel level, int chunkX, int chunkZ, boolean generated) {
+        if (liveChunks != null) {
+            liveChunks.loaded(level.dimension().location().toString(), chunkX, chunkZ, generated);
+        }
+    }
+
+    public void chunkUnloaded(ServerLevel level, int chunkX, int chunkZ) {
+        if (liveChunks != null) {
+            liveChunks.unloaded(level.dimension().location().toString(), chunkX, chunkZ);
+        }
+        markChunk(level, chunkX, chunkZ);
+    }
+
+    public void chunkSaved(ServerLevel level, int chunkX, int chunkZ) {
+        if (liveChunks != null) {
+            liveChunks.saved(level.dimension().location().toString(), chunkX, chunkZ);
+        }
+        markChunk(level, chunkX, chunkZ);
+    }
+
+    public int liveSnapshots() {
+        return liveStore.size();
+    }
+
+    // ---------------------------------------------------------------- in-game settings screen
+
+    /** Operators (permission level 2) and the owner of a single-player world. */
+    public boolean canConfigure(ServerPlayer player) {
+        return player.hasPermissions(2) || server.isSingleplayerOwner(player.getGameProfile());
+    }
+
+    public WebSettings currentSettings() {
+        return new WebSettings(WebMapConfig.TITLE.get(), WebMapConfig.FAVICON.get(), WebMapConfig.SHOW_CLAIMS.get(),
+                WebMapConfig.SHOW_PLAYERS.get(), WebMapConfig.SHOW_ONLINE_LIST.get(), WebMapConfig.SHOW_CHAT.get());
+    }
+
+    /** Whether a claims mod is running (the claims layer can be shown when enabled). */
+    public boolean claimsProviderPresent() {
+        return claims.available();
+    }
+
+    /** {@code host:port} of the web server for people on this machine, or empty when it is not running. */
+    public String address() {
+        if (!web.running()) {
+            return "";
+        }
+        String bind = WebMapConfig.BIND.get();
+        return (bind.equals("0.0.0.0") || bind.equals("::") ? "localhost" : bind) + ":" + WebMapConfig.PORT.get();
+    }
+
+    /** Server thread: writes the settings to the config file and applies them. */
+    public void saveSettings(WebSettings s, String by) {
+        WebMapConfig.TITLE.set(s.title());
+        WebMapConfig.FAVICON.set(s.favicon());
+        WebMapConfig.SHOW_CLAIMS.set(s.claims());
+        WebMapConfig.SHOW_PLAYERS.set(s.players());
+        WebMapConfig.SHOW_ONLINE_LIST.set(s.online());
+        WebMapConfig.SHOW_CHAT.set(s.chat());
+        WebMapConfig.SPEC.save();
+        applyConfig();
+        WebMapMod.LOGGER.info("Web map settings changed by {}: {}", by, s);
     }
 
     /** Server thread: a public chat message. */
@@ -238,6 +328,10 @@ public final class WebMapService implements WebServer.Source {
             }
         } else {
             file = dir.resolve(value).normalize();
+            if (!file.startsWith(dir.toAbsolutePath().normalize()) && !file.startsWith(dir.normalize())) {
+                WebMapMod.LOGGER.warn("web.favicon must be inside the server folder: {}", value);
+                return null;
+            }
         }
         String type = faviconType(file.getFileName() == null ? "" : file.getFileName().toString());
         if (type == null) {
@@ -308,6 +402,7 @@ public final class WebMapService implements WebServer.Source {
         BlockPos spawn = server.overworld().getSharedSpawnPos();
         JsonObject s = new JsonObject();
         s.addProperty("x", spawn.getX());
+        s.addProperty("y", spawn.getY());
         s.addProperty("z", spawn.getZ());
         o.add("spawn", s);
         return o.toString();

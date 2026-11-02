@@ -39,9 +39,12 @@ public final class TileRenderer implements MapRenderer {
 
     private record TileKey(String dim, int zoom, int x, int y) {}
 
+    private static final long PARENT_EVERY_NANOS = TimeUnit.SECONDS.toNanos(15);
+
     private final Map<String, ServerLevel> levels;
     private final TileStore store;
     private final BlockColorSource colors = new McBlockColors();
+    private final LiveChunkStore live;
     private final int zoomOutLevels;
     private final long nanosPerChunk;
     private final Map<RegionKey, Set<Long>> dirty = new ConcurrentHashMap<>();
@@ -55,8 +58,9 @@ public final class TileRenderer implements MapRenderer {
 
     /** @param levels dimension id → level, only the dimensions shown on the map */
     public TileRenderer(Map<String, ServerLevel> levels, TileStore store, int zoomOutLevels, int maxChunksPerSecond,
-            int scanIntervalSeconds) {
+            int scanIntervalSeconds, LiveChunkStore live) {
         this.levels = levels;
+        this.live = live;
         this.store = store;
         this.zoomOutLevels = zoomOutLevels;
         this.nanosPerChunk = 1_000_000_000L / Math.max(1, maxChunksPerSecond);
@@ -175,27 +179,36 @@ public final class TileRenderer implements MapRenderer {
 
     private void process() {
         try {
+            long nextParents = System.nanoTime() + PARENT_EVERY_NANOS;
             while (running && !dirty.isEmpty()) {
                 RegionKey key = dirty.keySet().iterator().next();
                 Set<Long> chunks = dirty.remove(key);
                 if (chunks != null && !chunks.isEmpty()) {
                     renderRegion(key, chunks);
                 }
-            }
-            for (int zoom = 1; zoom <= zoomOutLevels && running; zoom++) {
-                final int z = zoom;
-                Set<TileKey> level = new HashSet<>();
-                dirtyParents.removeIf(t -> t.zoom() == z && level.add(t));
-                for (TileKey t : level) {
-                    renderParent(t);
+                if (System.nanoTime() > nextParents) {
+                    renderParents();
+                    nextParents = System.nanoTime() + PARENT_EVERY_NANOS;
                 }
             }
+            renderParents();
         } catch (Throwable t) {
             if (running) {
                 LOGGER.error("Web map render failed", t);
             }
         } finally {
             current = null;
+        }
+    }
+
+    private void renderParents() throws IOException {
+        for (int zoom = 1; zoom <= zoomOutLevels && running; zoom++) {
+            final int z = zoom;
+            Set<TileKey> level = new HashSet<>();
+            dirtyParents.removeIf(t -> t.zoom() == z && level.add(t));
+            for (TileKey t : level) {
+                renderParent(t);
+            }
         }
     }
 
@@ -264,7 +277,9 @@ public final class TileRenderer implements MapRenderer {
         ChunkData data = null;
         try {
             throttle();
-            Optional<CompoundTag> tag = level.getChunkSource().chunkMap.read(new ChunkPos(cx, cz)).get(30, TimeUnit.SECONDS);
+            CompoundTag snapshot = live.get(level.dimension().location().toString(), cx, cz);
+            Optional<CompoundTag> tag = snapshot != null ? Optional.of(snapshot)
+                    : level.getChunkSource().chunkMap.read(new ChunkPos(cx, cz)).get(30, TimeUnit.SECONDS);
             if (tag.isPresent()) {
                 data = ChunkNbt.parse(tag.get(), level.getMinBuildHeight(), level.getHeight());
             }

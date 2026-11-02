@@ -270,6 +270,26 @@ Research and the list of Diorama entry points: [clientmap-research.md](clientmap
 49. **Web page language** follows `web.language` (AUTO uses the browser's languages); the claims layer is
     "Terrenos" in Spanish.
 
+## Version 0.3 (webmap)
+
+50. **Live terrain.** The map used to see only saved chunks, so explored land showed up after the autosave
+    (five minutes) or when unloaded. `LiveChunks` tracks loaded full chunks (`ChunkEvent.Load`; `isNewChunk`
+    means generated or promoted to full) and, every `liveCheckSeconds`, fingerprints the top block of each
+    column on the server thread within `liveBudgetMicros` per tick. New or changed chunks are copied (status,
+    surface heightmap, block and biome palettes, the saved-chunk format the renderers already parse) into
+    `LiveChunkStore`, which renderers read before disk. Snapshots are dropped on save and unload. Edits below
+    the surface are only picked up on save, as before.
+51. **Zoomed-out refresh** every 15 s during long level-0 queues (parents used to wait for an empty queue,
+    which never happens while someone explores, so zoomed-out views stayed black).
+52. **Mochos Esenciales claims** are read by reflection (`MochosClaimSource`): it ships a copy of claims-api in
+    its own package, so neither mod depends on the other. Providers are re-checked every 5 s; when the layer
+    appears or disappears `/api/info` gets a new revision and pages reload.
+53. **In-game settings** use optional payloads (`config_request`, `config_update`, `config_state`); the server
+    checks permission level 2 (or the single-player owner), cleans the strings, writes the COMMON config with
+    `ModConfigSpec.save()` and applies it. The screen is registered as the mod's `IConfigScreenFactory`.
+54. **Layer check boxes** on the page are per visitor (localStorage) and only offer layers the server
+    publishes; turning a layer off on the server still removes it for everyone.
+
 ## Assumptions to review
 
 - Repository: https://github.com/lorspi/diorama-addons (`issueTrackerURL` points to its issues).

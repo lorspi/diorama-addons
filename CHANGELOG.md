@@ -55,6 +55,21 @@ Each mod is versioned on its own with [Semantic Versioning](https://semver.org/)
 
 ### [Unreleased]
 
+### [0.3.0] - 2026-11-02
+
+- Terrain that is loaded in the game but not saved yet (newly explored or edited) appears on the map within
+  seconds: loaded chunks are checked in small slices on the server thread and changed ones are rendered from a
+  snapshot (`render.liveCheckSeconds`, `render.liveBudgetMicros`). Before, only saved chunks were drawn
+  (autosave every five minutes).
+- Zoomed-out levels are refreshed every 15 s while level 0 is still rendering, instead of only when the queue
+  is empty, so zooming out no longer shows black while players explore.
+- Land claims from Mochos Esenciales are shown too (read by reflection, no dependency).
+- Web page: "Spawn" button and marker; check boxes to show or hide claims, players and chat (remembered per
+  browser).
+- In-game settings screen for operators (mod list "Config" or `/webmap config`): page title, favicon and the
+  claims, players, online list and chat layers. Optional payloads; players without the mod still join.
+- `web.favicon` files must be inside the server folder.
+
 ### [0.2.0] - 2026-11-02
 
 - Optional **chat** (read only, with joins and leaves) and **list of connected players** on the page

@@ -2,7 +2,10 @@ package io.github.dioramaaddons.webmap;
 
 import com.mojang.logging.LogUtils;
 import io.github.dioramaaddons.webmap.config.WebMapConfig;
+import io.github.dioramaaddons.webmap.network.WebMapNetwork;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.chunk.LevelChunk;
+import net.neoforged.fml.loading.FMLEnvironment;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.ModContainer;
 import net.neoforged.fml.common.Mod;
@@ -54,8 +57,34 @@ public final class WebMapMod {
         bus.addListener((PlayerEvent.PlayerLoggedInEvent e) -> joinLeave(e.getEntity().getGameProfile().getName(), true));
         bus.addListener((PlayerEvent.PlayerLoggedOutEvent e) -> joinLeave(e.getEntity().getGameProfile().getName(), false));
         // Re-render chunks after they are written to disk (autosave) or unloaded.
-        bus.addListener((ChunkDataEvent.Save e) -> mark(e.getLevel(), e.getChunk().getPos().x, e.getChunk().getPos().z));
-        bus.addListener((ChunkEvent.Unload e) -> mark(e.getLevel(), e.getChunk().getPos().x, e.getChunk().getPos().z));
+        bus.addListener((ChunkDataEvent.Save e) -> {
+            WebMapService s = WebMapService.get();
+            if (s != null && e.getLevel() instanceof ServerLevel sl) {
+                s.chunkSaved(sl, e.getChunk().getPos().x, e.getChunk().getPos().z);
+            }
+        });
+        bus.addListener((ChunkEvent.Unload e) -> {
+            WebMapService s = WebMapService.get();
+            if (s != null && e.getLevel() instanceof ServerLevel sl) {
+                s.chunkUnloaded(sl, e.getChunk().getPos().x, e.getChunk().getPos().z);
+            }
+        });
+        // Loaded chunks are watched for changes that are not saved yet (see LiveChunks).
+        bus.addListener((ChunkEvent.Load e) -> {
+            WebMapService s = WebMapService.get();
+            if (e.getLevel() instanceof ServerLevel sl && e.getChunk() instanceof LevelChunk) {
+                if (s != null) {
+                    s.chunkLoaded(sl, e.getChunk().getPos().x, e.getChunk().getPos().z, e.isNewChunk());
+                } else {
+                    // Spawn chunks load before the map starts; remember them for it.
+                    WebMapService.loadedEarly(sl, e.getChunk().getPos().x, e.getChunk().getPos().z, e.isNewChunk());
+                }
+            }
+        });
+        modEventBus.addListener(WebMapNetwork::register);
+        if (FMLEnvironment.dist.isClient()) {
+            io.github.dioramaaddons.webmap.client.WebMapClient.init(container);
+        }
         LOGGER.info("Diorama Addons: Web Map {} loaded", container.getModInfo().getVersion());
     }
 
@@ -66,10 +95,4 @@ public final class WebMapMod {
         }
     }
 
-    private static void mark(Object level, int chunkX, int chunkZ) {
-        WebMapService s = WebMapService.get();
-        if (s != null && level instanceof ServerLevel sl) {
-            s.markChunk(sl, chunkX, chunkZ);
-        }
-    }
 }

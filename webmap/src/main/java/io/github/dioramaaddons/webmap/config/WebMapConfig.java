@@ -26,6 +26,8 @@ public final class WebMapConfig {
     public static final ModConfigSpec.IntValue SCAN_INTERVAL_SECONDS;
     public static final ModConfigSpec.BooleanValue RENDER_MISSING_ON_START;
     public static final ModConfigSpec.ConfigValue<List<? extends String>> DIMENSIONS;
+    public static final ModConfigSpec.IntValue LIVE_CHECK_SECONDS;
+    public static final ModConfigSpec.IntValue LIVE_BUDGET_MICROS;
 
     public enum Language { AUTO, EN, ES }
 
@@ -82,6 +84,12 @@ public final class WebMapConfig {
                 "is newer than its tile.").define("renderMissingOnStart", true);
         DIMENSIONS = b.comment("Dimensions shown on the map, e.g. [\"minecraft:overworld\"]. Empty = all.")
                 .defineListAllowEmpty("dimensions", List.of(), () -> "minecraft:overworld", o -> o instanceof String);
+        LIVE_CHECK_SECONDS = b.comment("Show terrain that is loaded in the game but not saved yet (new or edited chunks)",
+                "without waiting for the autosave: loaded chunks are checked this often and changed ones are",
+                "rendered. 0 = off (only saved chunks are drawn). Applies without a restart.")
+                .defineInRange("liveCheckSeconds", 10, 0, 600);
+        LIVE_BUDGET_MICROS = b.comment("Server-thread time those checks may use per tick, in microseconds (1000 = 1 ms).",
+                "Applies without a restart.").defineInRange("liveBudgetMicros", 1000, 100, 20_000);
         b.pop();
 
         b.comment("What the web page shows. Applied when the file is saved (or /webmap reload); open pages reload by themselves.")

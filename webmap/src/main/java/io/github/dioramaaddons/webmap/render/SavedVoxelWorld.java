@@ -35,6 +35,8 @@ final class SavedVoxelWorld implements VoxelWorld {
     private final ServerBlockLooks looks;
     private final BiomeTints tints;
     private final Runnable beforeRead;
+    private final LiveChunkStore live;
+    private final String dim;
     private final int minY;
     private final int maxY;
     private final Map<Long, Chunk> cache = new LinkedHashMap<>(256, 0.75F, true) {
@@ -44,8 +46,10 @@ final class SavedVoxelWorld implements VoxelWorld {
         }
     };
 
-    SavedVoxelWorld(ServerLevel level, ServerBlockLooks looks, BiomeTints tints, Runnable beforeRead) {
+    SavedVoxelWorld(ServerLevel level, ServerBlockLooks looks, BiomeTints tints, LiveChunkStore live, Runnable beforeRead) {
         this.level = level;
+        this.live = live;
+        this.dim = level.dimension().location().toString();
         this.looks = looks;
         this.tints = tints;
         this.beforeRead = beforeRead;
@@ -98,10 +102,16 @@ final class SavedVoxelWorld implements VoxelWorld {
     private Chunk load(int cx, int cz) {
         beforeRead.run();
         Optional<CompoundTag> tag;
-        try {
-            tag = level.getChunkSource().chunkMap.read(new ChunkPos(cx, cz)).get(30, TimeUnit.SECONDS);
-        } catch (Exception e) {
-            return MISSING;
+        CompoundTag snapshot = live.get(dim, cx, cz);
+        if (snapshot != null) {
+            // Loaded and changed since it was saved: newer than the copy on disk.
+            tag = Optional.of(snapshot);
+        } else {
+            try {
+                tag = level.getChunkSource().chunkMap.read(new ChunkPos(cx, cz)).get(30, TimeUnit.SECONDS);
+            } catch (Exception e) {
+                return MISSING;
+            }
         }
         if (tag.isEmpty()) {
             return MISSING;

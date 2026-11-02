@@ -42,12 +42,15 @@ public final class ObliqueTileRenderer implements MapRenderer {
 
     private record TileKey(String dim, int level, int x, int y) {}
 
+    private static final long PARENT_EVERY_NANOS = TimeUnit.SECONDS.toNanos(15);
+
     private final Map<String, ServerLevel> levels;
     private final TileStore tiles;
     private final TileStore hits;
     private final int zoomOutLevels;
     private final long nanosPerChunk;
     private final boolean downloadAssets;
+    private final LiveChunkStore live;
     private final double sin;
     private final double cos;
     private final Set<TileKey> dirty = ConcurrentHashMap.newKeySet();
@@ -66,8 +69,9 @@ public final class ObliqueTileRenderer implements MapRenderer {
     private long nextSlot;
 
     public ObliqueTileRenderer(Map<String, ServerLevel> levels, Path root, int zoomOutLevels, int maxChunksPerSecond,
-            int scanIntervalSeconds, boolean downloadAssets) {
+            int scanIntervalSeconds, boolean downloadAssets, LiveChunkStore live) {
         this.levels = levels;
+        this.live = live;
         this.tiles = new TileStore(root.resolve("terrain"));
         this.hits = new TileStore(root.resolve("hits"));
         this.zoomOutLevels = zoomOutLevels;
@@ -249,7 +253,7 @@ public final class ObliqueTileRenderer implements MapRenderer {
     }
 
     private SavedVoxelWorld world(String dim) {
-        return worlds.computeIfAbsent(dim, d -> new SavedVoxelWorld(levels.get(d), looks, tints, this::throttle));
+        return worlds.computeIfAbsent(dim, d -> new SavedVoxelWorld(levels.get(d), looks, tints, live, this::throttle));
     }
 
     private void process() {
@@ -258,25 +262,37 @@ public final class ObliqueTileRenderer implements MapRenderer {
                 return;
             }
             ensureLooks();
+            long nextParents = System.nanoTime() + PARENT_EVERY_NANOS;
             while (running && !dirty.isEmpty()) {
                 TileKey key = dirty.iterator().next();
                 dirty.remove(key);
                 renderTile(key);
-            }
-            for (int level = 1; level <= zoomOutLevels && running; level++) {
-                final int lv = level;
-                Set<TileKey> batch = new HashSet<>();
-                dirtyParents.removeIf(t -> t.level() == lv && batch.add(t));
-                for (TileKey t : batch) {
-                    renderParent(t);
+                // While players explore, level 0 is never done: refresh the zoomed-out levels now and then
+                // instead of only at the end, or they stay empty (black) for as long as someone is moving.
+                if (System.nanoTime() > nextParents) {
+                    renderParents();
+                    nextParents = System.nanoTime() + PARENT_EVERY_NANOS;
                 }
             }
+            renderParents();
         } catch (Throwable t) {
             if (running) {
                 LOGGER.error("Web map render failed", t);
             }
         } finally {
             current = null;
+        }
+    }
+
+    /** Zoomed-out levels, bottom up, so each one is built from fresh children. */
+    private void renderParents() throws IOException {
+        for (int level = 1; level <= zoomOutLevels && running; level++) {
+            final int lv = level;
+            Set<TileKey> batch = new HashSet<>();
+            dirtyParents.removeIf(t -> t.level() == lv && batch.add(t));
+            for (TileKey t : batch) {
+                renderParent(t);
+            }
         }
     }
 

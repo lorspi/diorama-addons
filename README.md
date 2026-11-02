@@ -80,6 +80,7 @@ commands](docs/claims-permissions.md).
 | `/webmap clearcache` | Delete all tiles and start over |
 | `/webmap reload` | Apply changes made to the config file |
 | `/webmap restart` | Restart the web server only |
+| `/webmap config` | Settings screen (needs the mod on the client; also in the mod list, "Config") |
 
 Config: `config/dioaddons_webmap-common.toml` (port, bind address, title, favicon, language, render speed,
 dimensions, layers: claims, players, online list, chat).

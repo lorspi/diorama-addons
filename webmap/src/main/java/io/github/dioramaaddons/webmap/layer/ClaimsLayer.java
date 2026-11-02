@@ -3,52 +3,81 @@ package io.github.dioramaaddons.webmap.layer;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import io.github.dioramaaddons.claimsapi.ChunkCoord;
-import io.github.dioramaaddons.claimsapi.ClaimChangeListener;
 import io.github.dioramaaddons.claimsapi.ClaimInfo;
-import io.github.dioramaaddons.claimsapi.ClaimsApi;
-import io.github.dioramaaddons.claimsapi.ClaimsApiProvider;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.List;
 
 /**
- * Claim layer fed by claims-api. The API is bundled in this jar, so these classes always load; when the
- * claims mod is not installed no implementation is registered and the layer simply stays unavailable.
- * Only names, owners and chunks are published: the API does not expose members or permissions.
+ * Claim layer. Claims come from Diorama Addons: Claims (through claims-api, bundled in this jar) and from
+ * Mochos Esenciales (read by reflection, see {@link MochosClaimSource}); either, both or none may be installed.
+ * Only names, owners and chunks are published: neither API exposes members or permissions.
  */
 public final class ClaimsLayer {
-    private final ClaimChangeListener listener = change -> dirty = true;
-    private ClaimsApi api;
-    private volatile boolean dirty = true;
+    /** Ticks between checks for a claims provider that started or stopped. */
+    private static final int REFRESH_TICKS = 100;
+
+    private final List<ClaimSource> sources = new ArrayList<>();
+    private volatile boolean available;
     private volatile Collection<ClaimInfo> snapshot = List.of();
     private volatile long version;
     private String json = "[]";
     private long jsonVersion = -1;
+    private int ticks;
 
     /** Server thread. */
     public void start() {
-        api = ClaimsApiProvider.get().orElse(null);
-        if (api != null) {
-            api.addListener(listener);
+        sources.add(new ApiClaimSource());
+        MochosClaimSource mochos = MochosClaimSource.create();
+        if (mochos != null) {
+            sources.add(mochos);
         }
+        refresh();
     }
 
     public void stop() {
-        if (api != null) {
-            api.removeListener(listener);
+        for (ClaimSource s : sources) {
+            s.stop();
         }
     }
 
     public boolean available() {
-        return api != null;
+        return available;
     }
 
-    /** Server thread: refresh the snapshot after changes. */
-    public void tick() {
-        if (api != null && dirty) {
-            dirty = false;
-            snapshot = api.allClaims();
+    /** Re-checks the providers; returns true when the layer became available or unavailable. */
+    private boolean refresh() {
+        boolean any = false;
+        for (ClaimSource s : sources) {
+            any |= s.refresh();
+        }
+        boolean changed = any != available;
+        available = any;
+        return changed;
+    }
+
+    /**
+     * Server thread: refresh the snapshot after changes.
+     *
+     * @return true when the layer became available or unavailable (the page settings must be rebuilt)
+     */
+    public boolean tick() {
+        boolean availabilityChanged = ++ticks % REFRESH_TICKS == 0 && refresh();
+        boolean dirty = false;
+        for (ClaimSource s : sources) {
+            dirty |= s.takeDirty();
+        }
+        if (dirty) {
+            List<ClaimInfo> all = new ArrayList<>();
+            for (ClaimSource s : sources) {
+                if (s.available()) {
+                    all.addAll(s.claims());
+                }
+            }
+            snapshot = all;
             version++;
         }
+        return availabilityChanged;
     }
 
     /** Any thread. JSON is rebuilt lazily, only after a change. */

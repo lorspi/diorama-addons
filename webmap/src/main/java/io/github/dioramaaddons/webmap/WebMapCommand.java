@@ -10,7 +10,7 @@ import net.minecraft.commands.Commands;
 import net.minecraft.commands.arguments.DimensionArgument;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
-/** {@code /webmap status | render [dimension] | clearcache | restart | reload} for operators. */
+/** {@code /webmap status | render [dimension] | clearcache | restart | reload | config} for operators. */
 final class WebMapCommand {
     private WebMapCommand() {}
 
@@ -27,7 +27,8 @@ final class WebMapCommand {
                                         .dimension().location().toString()))))
                 .then(Commands.literal("clearcache").executes(WebMapCommand::clearCache))
                 .then(Commands.literal("restart").executes(WebMapCommand::restart))
-                .then(Commands.literal("reload").executes(WebMapCommand::reload)));
+                .then(Commands.literal("reload").executes(WebMapCommand::reload))
+                .then(Commands.literal("config").executes(WebMapCommand::config)));
     }
 
     private static WebMapService service(CommandContext<CommandSourceStack> ctx) {
@@ -54,6 +55,7 @@ final class WebMapCommand {
             String current = r.current();
             src.sendSuccess(() -> ServerLang.tr(src, "dioaddons_webmap.cmd.render_status", r.queuedRegions(),
                     r.queuedParents(), r.chunksRendered(), r.tilesWritten(), current == null ? "-" : current), false);
+            src.sendSuccess(() -> ServerLang.tr(src, "dioaddons_webmap.cmd.live", s.liveSnapshots()), false);
         }
         src.sendSuccess(() -> ServerLang.tr(src, "dioaddons_webmap.cmd.layers",
                 String.join(", ", s.dimensions()), yesNo(src, s.claimsAvailable()), yesNo(src, s.playersShown()),
@@ -63,6 +65,20 @@ final class WebMapCommand {
 
     private static net.minecraft.network.chat.Component yesNo(CommandSourceStack src, boolean value) {
         return ServerLang.tr(src, value ? "dioaddons_webmap.cmd.yes" : "dioaddons_webmap.cmd.no");
+    }
+
+    private static int config(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        WebMapService s = service(ctx);
+        if (s == null) {
+            return 0;
+        }
+        CommandSourceStack src = ctx.getSource();
+        if (!io.github.dioramaaddons.webmap.network.WebMapNetwork.sendState(src.getPlayerOrException(),
+                io.github.dioramaaddons.webmap.network.ConfigStatePayload.Reason.OPEN)) {
+            src.sendFailure(ServerLang.tr(src, "dioaddons_webmap.cmd.config_needs_mod"));
+            return 0;
+        }
+        return 1;
     }
 
     private static int reload(CommandContext<CommandSourceStack> ctx) {
