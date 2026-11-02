@@ -192,8 +192,13 @@ Research and the list of Diorama entry points: [clientmap-research.md](clientmap
 33. **Privacy:** each player can hide their position (`/maplocation hide`); default from config.
     Spectators are never sent. Positions go only to players in the same pool.
 34. **Diorama version gate.** A mixin plugin applies the Diorama mixins only for versions listed in
-    `DioramaCompat.SUPPORTED` (now `0.6.0+neoforge-1.21.1`); the dependency is optional with any version
-    so other versions do not stop the game from loading.
+    `DioramaCompat.SUPPORTED` (now `0.6.0`, `0.6.1` and `0.7.0`, all `+neoforge-1.21.1`); the dependency is
+    optional with any version so other versions do not stop the game from loading. Each supported version
+    maps to the shape of the internals we hook (`DioramaCompat.Internals`); a mixin whose target only
+    exists in some versions is applied only to those (`MapScreenSpotV06Mixin` for
+    `spotItems(Spot)` in 0.6.x, `MapScreenSpotV07Mixin` for `spotItems(Spot, BlockPos)` in 0.7.0), so
+    injectors keep `defaultRequire 1` and a missing target still fails loudly. clientmap compiles against
+    the newest supported version (0.7.0); older ones stay supported while it costs one small mixin.
 
 ## Section 10 — open source
 

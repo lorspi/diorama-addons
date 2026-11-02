@@ -20,7 +20,7 @@ commands.
 - Download the jars from [Releases](../../releases) (each mod has its own, tagged `claims-v…`,
   `webmap-v…`, `clientmap-v…`) and put them in the `mods` folder of the server, and of the clients that
   need them (see the table).
-- Client Map on the client needs **Diorama 0.6.0** (`0.6.0+neoforge-1.21.1`). Other Diorama versions are
+- Client Map on the client needs **Diorama 0.7.0, 0.6.1 or 0.6.0** (`+neoforge-1.21.1`). Other Diorama versions are
   detected and left alone.
 
 ## Claims

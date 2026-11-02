@@ -62,6 +62,13 @@ Each mod is versioned on its own with [Semantic Versioning](https://semver.org/)
 
 ### [Unreleased]
 
+### [0.2.0] - 2026-11-02
+
+- Support Diorama 0.7.0 (NeoForge 1.21.1), whose map right-click menu changed shape; Diorama 0.6.0 and
+  0.6.1 stay supported.
+- With Diorama 0.7.0's view of another dimension's map, "Add shared waypoint" adds it in the dimension
+  shown; claiming and releasing are offered only in the player's own dimension.
+
 ### [0.1.0] - 2026-11-01
 
 - Integration with Diorama 0.6.0 (NeoForge 1.21.1): claims on the map, claim/release from the right-click
