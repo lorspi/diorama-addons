@@ -20,7 +20,7 @@ inglés**; esta es solo de referencia.
 ### Resumen (Modrinth "Summary", máx. 256 caracteres · CurseForge "Summary")
 
 ```
-Un mapa en vivo de tu servidor en el navegador, dibujado al estilo Diorama con texturas reales, sol y sombras. Solo servidor: los jugadores no instalan nada. Muestra los claims si Claims está instalado.
+Un mapa en vivo de tu servidor en el navegador, al estilo Diorama con texturas reales, sol y sombras. Lado servidor: los jugadores no instalan nada. Muestra terrenos, jugadores y chat.
 ```
 
 ## 2. Campos de Modrinth
@@ -30,7 +30,7 @@ Un mapa en vivo de tu servidor en el navegador, dibujado al estilo Diorama con t
 | Tipo de proyecto | Mod |
 | Categorías principales | `Utility`, `Management` |
 | Categorías adicionales | `Social` |
-| Lado cliente | No soportado (Unsupported) |
+| Lado cliente | Opcional (solo para la pantalla de configuración en el juego) |
 | Lado servidor | Obligatorio |
 
 ## 3. Campos de CurseForge
@@ -58,12 +58,16 @@ Web Map corre dentro de tu servidor NeoForge 1.21.1 y sirve un mapa en vivo en `
 
 - 🏰 **Estilo Diorama** — el mundo se dibuja en ángulo a partir de las texturas reales de los bloques, con sol, sombras y contornos. Los árboles y acantilados sobresalen del mapa.
 - 🧩 **Bloques de mods bien dibujados** — usan las texturas de sus propios jars.
-- 🐢 **Ligero para el servidor** — los tiles se generan en segundo plano, con baja prioridad y un límite de chunks por segundo. Solo se redibujan las zonas que cambiaron.
-- 🔍 **Zoom y dimensiones** — niveles de zoom y un selector para cada dimensión que actives en la configuración.
-- 🚩 **Claims de terreno** — con [Diorama Addons: Claims](https://modrinth.com/mod/diorama-addons-claims) instalado, los claims se pintan sobre el terreno con un color por propietario y una etiqueta con el nombre del claim y su dueño. Los miembros y permisos nunca se publican.
-- 🔒 **Privado por defecto** — las posiciones de los jugadores están **desactivadas** salvo que las actives, porque el mapa puede estar expuesto a internet.
+- ⚡ **En vivo** — el terreno recién explorado o modificado aparece en segundos, incluso antes de que el juego lo guarde. Las páginas abiertas solo recargan los tiles que cambiaron.
+- 🐢 **Ligero para el servidor** — los tiles se generan en segundo plano, con baja prioridad y un límite de chunks por segundo; las comprobaciones en vivo usan un pequeño presupuesto de tiempo por tick.
+- 🔍 **Zoom, dimensiones y spawn** — niveles de zoom, un selector para cada dimensión activada y un botón que centra el mapa en el punto de aparición.
+- 🚩 **Terrenos** — los claims de [Diorama Addons: Claims](https://modrinth.com/mod/diorama-addons-claims) o de Mochos Esenciales se pintan sobre el terreno con un color por propietario y una etiqueta con el nombre del terreno y su dueño. Los miembros y permisos nunca se publican.
+- 💬 **Chat y conectados** — chat público opcional de solo lectura (con entradas y salidas) y lista de jugadores conectados.
+- ☑️ **Casillas de capas** — los visitantes muestran u ocultan terrenos, jugadores y chat; el navegador recuerda la elección.
+- ⚙️ **Configuración en el juego** — los operadores con el mod en su cliente cambian el título, el icono y las capas desde una pantalla (lista de mods → Config, o `/webmap config`). Todo está también en el archivo de configuración y se aplica sin reiniciar.
+- 🔒 **Privado por defecto** — las posiciones de los jugadores y el chat están **desactivados** hasta que los actives, porque el mapa puede ser público.
 - 🛟 **Nunca tumba el servidor** — si el puerto está ocupado, registra un error claro y el juego sigue funcionando.
-- 🗂️ **API JSON** — `/api/info`, `/api/claims` y `/api/players` para tus propias herramientas.
+- 🗂️ **API JSON** — `/api/info`, `/api/claims`, `/api/players`, `/api/chat` y `/api/changes` para tus propias herramientas.
 - 📄 **Opción de mapa plano** — usa `render.style = "TOP_DOWN"` para un mapa cenital clásico.
 
 ## Instalación
@@ -71,13 +75,13 @@ Web Map corre dentro de tu servidor NeoForge 1.21.1 y sirve un mapa en vivo en `
 | Dónde | ¿Necesario? |
 |---|---|
 | Servidor | **Obligatorio** |
-| Cliente | No hace falta |
+| Cliente | Opcional — solo para la pantalla de configuración en el juego |
 
 Requiere **Minecraft 1.21.1** y **NeoForge 21.1.265 o superior**.
 
 1. Pon el jar en la carpeta `mods` del servidor y arráncalo.
 2. Abre `http://<dirección-del-servidor>:8123/` en un navegador.
-3. Cambia el puerto, la dirección de enlace, la velocidad de renderizado, las dimensiones y las capas en `config/dioaddons_webmap-common.toml`.
+3. Cambia el puerto, la dirección de enlace, la velocidad de renderizado, las dimensiones, el título, el icono y las capas en `config/dioaddons_webmap-common.toml` (o en el juego con `/webmap config`).
 
 > **Primer arranque:** el estilo Diorama usa las texturas vanilla del jar oficial del cliente de Minecraft, que se descarga una vez desde Mojang (unos 27 MB, verificado con el SHA-1 de Mojang). El estilo `TOP_DOWN` no necesita descarga.
 
@@ -88,6 +92,9 @@ Requiere **Minecraft 1.21.1** y **NeoForge 21.1.265 o superior**.
 | `/webmap status` | Servidor web, cola de renderizado y capas |
 | `/webmap render [dimensión]` | Vuelve a renderizar todo |
 | `/webmap clearcache` | Borra todos los tiles y empieza de nuevo |
+| `/webmap reload` | Aplica los cambios del archivo de configuración |
+| `/webmap restart` | Reinicia solo el servidor web |
+| `/webmap config` | Abre la pantalla de configuración (necesita el mod en tu cliente) |
 
 Referencia de la API HTTP: [docs/webmap-api.md](https://github.com/lorspi/diorama-addons/blob/main/docs/webmap-api.md).
 
@@ -107,31 +114,30 @@ Código abierto con licencia MIT — [código fuente e incidencias en GitHub](ht
 
 ---
 
-## 5. Subida de la versión 0.1.0
+## 5. Subida de la versión 0.3.0
 
 | Campo | Valor |
 |---|---|
-| Archivo | `webmap/build/libs/diorama-addons-webmap-1.21.1-0.1.0.jar` (no el jar `-sources`) |
-| Nombre de la versión | `Web Map 0.1.0` |
-| Número de versión | `0.1.0+1.21.1` |
+| Archivo | `webmap/build/libs/diorama-addons-webmap-1.21.1-0.3.0.jar` (no el jar `-sources`) |
+| Nombre de la versión | `Web Map 0.3.0` |
+| Número de versión | `0.3.0+1.21.1` |
 | Canal | Beta |
 | Loaders | NeoForge |
 | Versiones del juego | 1.21.1 |
-| Entorno (CurseForge) | Server |
+| Entorno (CurseForge) | Server (cliente opcional) |
 | Java (CurseForge) | Java 21 |
-| Dependencias | Ninguna. Integración opcional: Diorama Addons: Claims |
+| Dependencias | Ninguna. Integraciones opcionales: Diorama Addons: Claims, Mochos Esenciales |
 
 ### Changelog
 
 ```markdown
-Primera versión.
-
-- Mapa web servido por el servidor del juego (puerto 8123 por defecto), con niveles de zoom y selector de dimensión.
-- Estilo Diorama: el mundo dibujado en ángulo a partir de las texturas de los bloques, con sol, sombras y contornos. Los bloques de mods usan sus propias texturas. Estilo `TOP_DOWN` disponible.
-- Renderizado en segundo plano con prioridad mínima y límite de chunks por segundo; solo se redibujan las zonas que cambiaron.
-- Claims pintados sobre el terreno (color por propietario, etiqueta con nombre y dueño) cuando Diorama Addons: Claims está instalado.
-- Posiciones de jugadores opcionales (desactivadas por defecto).
-- `/webmap status|render|clearcache`; endpoints JSON `/api/info`, `/api/claims`, `/api/players`.
+- **Terreno en vivo:** las zonas recién exploradas o modificadas aparecen en el mapa en segundos, sin esperar al autoguardado.
+- **Se acabó el negro al alejarse:** los niveles alejados se actualizan mientras los jugadores exploran.
+- **Botón y marcador de spawn** para centrar el mapa en el punto de aparición.
+- **Casillas de capas** en la página para mostrar u ocultar terrenos, jugadores y chat.
+- **Pantalla de configuración en el juego** para operadores (lista de mods → Config, o `/webmap config`): título, icono y las capas de terrenos, jugadores, lista de conectados y chat. Los jugadores sin el mod pueden entrar igual.
+- **Soporte para Mochos Esenciales:** sus terrenos y su chat público se muestran en el mapa (los mensajes de grupo y directos nunca se publican).
+- Los archivos de `web.favicon` deben estar dentro de la carpeta del servidor.
 ```
 
 ## 6. Galería
@@ -140,7 +146,7 @@ Primera versión.
 |---|---|---|
 | `docs/images/webmap-claims.png` (marcar como destacada) | Mapa web con claims | El mundo al estilo Diorama, con los claims pintados sobre el terreno. |
 
-Capturas extra sugeridas: una vista alejada de una zona grande, el Nether y el estilo `TOP_DOWN`.
+Capturas extra sugeridas: las casillas de capas y el panel de chat, la pantalla de configuración en el juego, una vista alejada de una zona grande, el Nether y el estilo `TOP_DOWN`.
 
 ## 7. Antes de publicar
 
