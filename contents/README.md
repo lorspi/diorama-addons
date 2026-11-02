@@ -13,6 +13,21 @@ contents/
 └─ _source/     icono original de Diorama y el script que genera los iconos
 ```
 
+## Resource pack: Diorama en español
+
+`diorama-es-pack/` es un resource pack con la traducción al español de Diorama 0.7.0 (370 claves; los
+textos de `en_us.json` del jar). Usa un solo `es_es.json`, que al empaquetar se copia a todas las variantes
+de español de Minecraft (`es_mx`, `es_ar`, `es_cl`, `es_ec`, `es_uy`, `es_ve`). El icono (`pack.png`) es la
+opción G en dorado con la bandera de Colombia en el recuadro.
+
+```bash
+python -I _source/make_icons.py diorama-es-pack pack gold
+python -I _source/make_lang_pack.py diorama-es-pack diorama-es-pack.zip
+```
+
+Cuando salga una versión nueva de Diorama, compara su `en_us.json` con `es_es.json` y traduce las claves
+nuevas.
+
 ## Iconos
 
 Cada icono es la ilustración de Diorama con un borde redondeado y una pestaña con un glifo pixel-art:

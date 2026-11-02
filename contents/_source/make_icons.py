@@ -64,11 +64,31 @@ GLYPHS = {
         "LLLL.....LLLLL",
     ],
 }
+
+
+def _colombia_flag():
+    """Waving Colombian flag on a pole: yellow half, blue and red quarters (lower case = folded shade)."""
+    wave = [0, 0, 0, 1, 1, 1, 0, 0, 0, 1, 1, 1]
+    bands = "YYYYUUCC"   # 2:1:1
+    rows = [["."] * (2 + len(wave)) for _ in range(14)]
+    for y in range(len(rows)):
+        rows[y][0], rows[y][1] = "P", "Q"
+    for c, off in enumerate(wave):
+        for i, band in enumerate(bands):
+            rows[1 + off + i][2 + c] = band.lower() if off else band
+    return ["".join(r) for r in rows]
+
+
+GLYPHS["colombia"] = _colombia_flag()
+
 GLYPH_COLORS = {
     "P": (214, 214, 214), "Q": (150, 150, 150),          # pole
     "R": (214, 54, 54), "D": (150, 30, 36), "W": (255, 220, 120),
     "B": (64, 140, 222), "G": (96, 196, 92),
     "L": (240, 222, 170), "M": (200, 176, 120),
+    "Y": (252, 209, 22), "y": (214, 172, 10),            # Colombian flag
+    "U": (0, 56, 147), "u": (0, 40, 112),
+    "C": (206, 17, 38), "c": (160, 10, 28),
 }
 OUTLINE = (24, 22, 28)
 
@@ -300,6 +320,11 @@ def main():
             save_small(ic, outdir / f"claims-option-{key}.png")
             icons[key] = ic
         sheet(icons, outdir / "claims-options-sheet.png")
+    elif mode == "pack":  # python make_icons.py <dir> pack [palette]: icon of the Spanish resource pack
+        pal = sys.argv[3] if len(sys.argv) > 3 else "gold"
+        icon = opt_g(art, "colombia", PALETTES[pal])
+        save_small(icon, outdir / "pack.png")
+        sheet({"pack": icon}, outdir / "pack-preview.png")
     else:  # final: python make_icons.py <dir> final <variant>
         variant = sys.argv[3]
         icons = {}
