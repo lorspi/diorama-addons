@@ -26,6 +26,17 @@ Each mod is versioned on its own with [Semantic Versioning](https://semver.org/)
 
 ### [Unreleased]
 
+### [0.2.0] - 2026-11-02
+
+- **Admin mode in the claims screen** (operators): a button turns it on and off (same as
+  `/claims admin bypass`). It lists every claim on the server, searchable by claim or owner name, and lets
+  operators rename, delete, edit members and public permissions, add or release chunks, teleport to a claim
+  (**Go**) and transfer it to another player. Other players' claims are drawn in orange, the panel gets an
+  orange frame and a "⚠ Editing X's claim" banner.
+- New `/claims admin transfer <player>`; `/claims help` lists the admin commands to operators.
+- The result of an action stays visible in the screen for a few seconds.
+- Network protocol version 2: clients and servers must both run 0.2.x to use the screen.
+
 ### [0.1.0] - 2026-11-01
 
 - Chunk-based claims with per-player limits (chunks and claims), contiguity and optional spawn distance.
@@ -43,6 +54,21 @@ Each mod is versioned on its own with [Semantic Versioning](https://semver.org/)
 ## webmap
 
 ### [Unreleased]
+
+### [0.2.0] - 2026-11-02
+
+- Optional **chat** (read only, with joins and leaves) and **list of connected players** on the page
+  (`layers.showChat`, off by default; `layers.showOnlineList`, on by default). Clicking a player whose
+  position is shown centres the map on them.
+- Page **title** (`web.title`, default: the server MOTD), **favicon** (`web.favicon`: an http(s) URL or an
+  image file relative to the server folder; default `server-icon.png` or the mod's icon) and **language**
+  (`web.language`: AUTO, EN, ES). In Spanish the claims layer is called "Terrenos".
+- The `http`, `web` and `layers` settings apply without restarting the game server: when the config file is
+  saved, or with the new `/webmap reload`. A new port, bind address or thread count restarts only the web
+  server; `/webmap restart` restarts it by hand. Open pages reload themselves.
+- No more 404 errors in the browser console: tiles that do not exist yet answer a transparent pixel, and the
+  page reloads only the tiles the server re-rendered (new `/api/changes`) instead of the whole map every two
+  minutes, so new terrain shows up within seconds.
 
 ### [0.1.0] - 2026-11-01
 

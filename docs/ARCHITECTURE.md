@@ -247,6 +247,29 @@ Research and the list of Diorama entry points: [clientmap-research.md](clientmap
     next column east, where its shadows fall); the chunk is dropped from the renderer's cache before the
     next tile. Tiles with nothing in view leave an `.empty` marker so restarts skip them.
 
+## Version 0.2 (claims, webmap)
+
+44. **Admin mode in the claims screen reuses the bypass flag.** Operators toggle it with a new optional
+    `admin_action` payload (also `TELEPORT` and `TRANSFER`); every admin action checks the operator level on
+    the server again. In admin mode the state lists every claim (not only the ones on the grid), so remote
+    claims can be managed; the screen filters the list client-side. Ownership transfer lives in `ClaimStore`
+    (pure, tested) and ignores the new owner's limits. The claims network version went to `2` because
+    `state` changed; NeoForge refuses to connect mismatched versions with a clear message.
+45. **Web map settings that apply live.** `http`, `web` and `layers` are re-read on `ModConfigEvent.Reloading`
+    and with `/webmap reload` (parses the TOML with night-config, corrects it against the spec and copies it
+    into the loaded config), because NeoForge's file watcher gets no events on some file systems (verified
+    on a Windows folder mounted in WSL). Only the web server restarts, and only when its own settings changed.
+    The page polls `/api/info` and reloads when `revision` changes.
+46. **Chat on the web** comes from `ServerChatEvent` at lowest priority, ignoring cancelled messages, plus
+    login/logout events; kept in memory only and never sent when `layers.showChat` is off (default).
+47. **No 404s for tiles.** Missing tiles answer a 1×1 transparent PNG. `TileStore` reports every write and
+    delete to a bounded `TileChangeLog` (pure, tested); the page asks `/api/changes` every 5 s and reloads only
+    those tiles in place (cache-busting query), instead of redrawing the whole map every two minutes.
+48. **Favicon** is an http(s) URL (redirect) or an image file relative to the server folder; other file types
+    are refused so the setting cannot be used to publish arbitrary files.
+49. **Web page language** follows `web.language` (AUTO uses the browser's languages); the claims layer is
+    "Terrenos" in Spanish.
+
 ## Assumptions to review
 
 - Repository: https://github.com/lorspi/diorama-addons (`issueTrackerURL` points to its issues).

@@ -49,6 +49,21 @@ For a player permission, at a position inside a claim:
 Outside claims everything is allowed. Operators with **bypass** on (`/claims admin bypass`) ignore every
 check and can edit any claim from the commands and the GUI.
 
+## Admin mode (operators)
+
+Operators (permission level `adminPermissionLevel`, 2 by default) see an **Admin mode** button in the claims
+screen. It toggles the same bypass as `/claims admin bypass`. While it is on:
+
+- The claims list shows **every claim on the server**, the operator's own first, then by owner and name,
+  with a search box (claim or owner name). Other players' claims are written as `Owner: Claim` in orange.
+- The selected claim can be renamed, deleted, given or denied members and public permissions, and extended
+  or shrunk from the grid, ignoring limits. **Go** teleports to the middle of the claim; **Transfer** gives it
+  to another player (online or known to the server), dropping that player's member entry.
+- Whenever the selected claim belongs to someone else, a "⚠ Editing X's claim" banner is shown; the panel has
+  an orange frame and the title says "ADMIN MODE". Claims of others on the grid are orange.
+
+The server checks the operator level again for every admin action; a client cannot unlock admin mode.
+
 ## Templates
 
 | Template | Permissions |
@@ -83,6 +98,7 @@ Templates are shortcuts: after applying one, each permission can still be toggle
 | `/claims admin bypass` | Toggle protection bypass (operators) |
 | `/claims admin list [player]` | List all claims, or one player's |
 | `/claims admin delete` / `/claims admin unclaim` | Remove the claim / chunk at your position |
+| `/claims admin transfer <player>` | Give the claim at your position to another player |
 
 Messages are translated on the server (English and Spanish) so players without the mod read them in their
 language.

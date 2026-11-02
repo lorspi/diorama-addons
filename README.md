@@ -47,7 +47,11 @@ commands.
 | `/claims permission public <permission> <true\|false>` | What everyone may do, and claim settings |
 | `/claims permission member <player> <permission> <true\|false>` | One friend's permission |
 | `/claims permission template <player> <template>` | Apply a template |
-| `/claims admin bypass\|list [player]\|delete\|unclaim` | Operators |
+| `/claims admin bypass\|list [player]\|delete\|unclaim\|transfer <player>` | Operators |
+
+Operators also get an **admin mode** button in the screen: it lists every player's claim (with a search box)
+to rename, delete, edit members and permissions, add or release chunks, teleport there or transfer it.
+Other players' claims are shown in orange so it is always clear whose claim you are editing.
 
 Config: `serverconfig/dioaddons_claims-server.toml` in the world. Details: [permissions and
 commands](docs/claims-permissions.md).
@@ -65,15 +69,20 @@ commands](docs/claims-permissions.md).
   `render.style = "TOP_DOWN"` for the older flat map that needs no download.
 - With Claims installed, claims are painted on the terrain with a colour per owner, an edge where the owner
   changes and a label with the name and owner. Members and permissions are never published. Player
-  positions are **off by default**.
+  positions and the chat are **off by default**; the list of connected players is on.
+- Title, favicon and language (English/Spanish) of the page are set in the config. Changes to the page, the
+  layers and the port apply without restarting the game server.
 
 | Command (operators) | |
 |---|---|
 | `/webmap status` | Web server, render queue, layers |
 | `/webmap render [dimension]` | Render everything again |
 | `/webmap clearcache` | Delete all tiles and start over |
+| `/webmap reload` | Apply changes made to the config file |
+| `/webmap restart` | Restart the web server only |
 
-Config: `config/dioaddons_webmap-common.toml` (port, bind address, render speed, dimensions, layers).
+Config: `config/dioaddons_webmap-common.toml` (port, bind address, title, favicon, language, render speed,
+dimensions, layers: claims, players, online list, chat).
 API: [docs/webmap-api.md](docs/webmap-api.md).
 
 ## Client Map (Diorama)
