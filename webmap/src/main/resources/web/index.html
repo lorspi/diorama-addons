@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>World Map</title>
+  <link rel="icon" href="favicon">
   <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
   <link rel="stylesheet" href="style.css">
 </head>
@@ -14,6 +15,13 @@
     <select id="dimension" aria-label="Dimension"></select>
   </div>
   <div id="coords" class="panel">x 0, z 0</div>
+  <div id="side" class="panel" hidden>
+    <div id="side-tabs" role="tablist"></div>
+    <div id="side-body">
+      <ol id="chat-list" hidden></ol>
+      <ul id="online-list" hidden></ul>
+    </div>
+  </div>
   <script src="vendor/leaflet/leaflet.js"></script>
   <script src="app.js"></script>
 </body>

@@ -12,8 +12,28 @@
   const NATIVE = OBLIQUE ? Math.round(Math.log2(proj.pixelsPerUnit)) : 0;
   const UNITS0 = OBLIQUE ? proj.tileUnits : tileSize;
 
-  document.getElementById('title').textContent = info.name || 'World Map';
-  document.title = info.name || 'World Map';
+  // ------------------------------------------------------------------ language
+  const TEXT = {
+    en: {
+      map: 'World Map', claims: 'Claims', players: 'Players', chat: 'Chat', online: 'Online',
+      dimension: 'Dimension', joined: 'joined the game', left: 'left the game', noChat: 'No messages yet.',
+      nobody: 'Nobody is online.', hide: 'Hide', show: 'Show',
+    },
+    es: {
+      map: 'Mapa del mundo', claims: 'Terrenos', players: 'Jugadores', chat: 'Chat', online: 'Conectados',
+      dimension: 'Dimensión', joined: 'entró al juego', left: 'salió del juego', noChat: 'Aún no hay mensajes.',
+      nobody: 'No hay nadie conectado.', hide: 'Ocultar', show: 'Mostrar',
+    },
+  };
+  const LANG = info.language && TEXT[info.language]
+    ? info.language
+    : ((navigator.languages || [navigator.language || 'en']).map(l => l.slice(0, 2)).find(l => TEXT[l]) || 'en');
+  const t = key => TEXT[LANG][key];
+  document.documentElement.lang = LANG;
+  document.getElementById('dimension').setAttribute('aria-label', t('dimension'));
+
+  document.getElementById('title').textContent = info.name || t('map');
+  document.title = info.name || t('map');
 
   const map = L.map('map', {
     crs: L.CRS.Simple,
@@ -31,6 +51,8 @@
       return `tiles/${this.options.dim}/${NATIVE - coords.z}/${coords.x}/${coords.y}.png`;
     },
   });
+  const CLAIMS = t('claims');
+  const PLAYERS = t('players');
 
   // ------------------------------------------------------------------ state
   let current = null;
@@ -53,29 +75,45 @@
     createTile(coords, done) {
       const canvas = L.DomUtil.create('canvas');
       canvas.width = canvas.height = tileSize;
+      this.loadHits(canvas, coords, done, null);
+      return canvas;
+    },
+    /** Fetches (or reuses) the hit map of a tile and paints claims over it. */
+    loadHits(canvas, coords, done, version) {
       const level = NATIVE - coords.z;
       const key = `${level}/${coords.x}/${coords.y}`;
       const paint = (data) => {
+        canvas.getContext('2d').clearRect(0, 0, tileSize, tileSize);
         if (data && info.claims && map.hasLayer(this)) paintClaims(canvas, data, coords.x, coords.y, level);
         done(null, canvas);
       };
-      if (hitCache.has(key)) {
+      if (version === null && hitCache.has(key)) {
         setTimeout(() => paint(hitCache.get(key)), 0);
-        return canvas;
+        return;
       }
+      const dim = current.key;
       const img = new Image();
       img.onload = () => {
+        if (dim !== current.key) return;
         const off = document.createElement('canvas');
         off.width = off.height = tileSize;
         const ctx = off.getContext('2d', { willReadFrequently: true });
         ctx.drawImage(img, 0, 0);
         const data = ctx.getImageData(0, 0, tileSize, tileSize).data;
-        hitCache.set(key, data);
-        paint(data);
+        // A missing hit map is answered with a 1x1 transparent image: keep "nothing here".
+        const value = img.naturalWidth === tileSize ? data : null;
+        hitCache.set(key, value);
+        paint(value);
       };
       img.onerror = () => { hitCache.set(key, null); paint(null); };
-      img.src = `hits/${current.key}/${level}/${coords.x}/${coords.y}.png`;
-      return canvas;
+      img.src = `hits/${dim}/${level}/${coords.x}/${coords.y}.png` + (version === null ? '' : `?v=${version}`);
+    },
+    /** Reloads one tile in place after the server re-rendered it. */
+    refreshTile(level, x, y, version) {
+      const z = NATIVE - level;
+      const tile = this._tiles[`${x}:${y}:${z}`];
+      hitCache.delete(`${level}/${x}/${y}`);
+      if (tile) this.loadHits(tile.el, { x, y, z }, () => {}, version);
     },
   });
 
@@ -159,16 +197,16 @@
 
   // ------------------------------------------------------------------ layers and controls
   if (info.claims) {
-    overlays['Claims'] = OBLIQUE ? hitLayer : vectorClaims;
-    overlays['Claims'].addTo(map);
+    overlays[CLAIMS] = OBLIQUE ? hitLayer : vectorClaims;
+    overlays[CLAIMS].addTo(map);
     labelsLayer.addTo(map);
   } else if (OBLIQUE) {
     hitLayer.addTo(map); // still needed for coordinates
   }
-  if (info.players) { overlays['Players'] = playersLayer; playersLayer.addTo(map); }
+  if (info.players) { overlays[PLAYERS] = playersLayer; playersLayer.addTo(map); }
   if (Object.keys(overlays).length) L.control.layers(null, overlays, { collapsed: false }).addTo(map);
-  map.on('overlayremove', e => { if (e.layer === overlays['Claims']) map.removeLayer(labelsLayer); });
-  map.on('overlayadd', e => { if (e.layer === overlays['Claims']) updateLabels(); });
+  map.on('overlayremove', e => { if (e.layer === overlays[CLAIMS]) map.removeLayer(labelsLayer); });
+  map.on('overlayadd', e => { if (e.layer === overlays[CLAIMS]) updateLabels(); });
 
   const select = document.getElementById('dimension');
   for (const d of info.dimensions) {
@@ -265,7 +303,7 @@
   }
   function updateLabels() {
     if (!info.claims) return;
-    const show = map.getZoom() >= NATIVE - 1 && map.hasLayer(overlays['Claims']);
+    const show = map.getZoom() >= NATIVE - 1 && map.hasLayer(overlays[CLAIMS]);
     if (show && !map.hasLayer(labelsLayer)) labelsLayer.addTo(map);
     if (!show && map.hasLayer(labelsLayer)) map.removeLayer(labelsLayer);
   }
@@ -287,6 +325,7 @@
   }
 
   // ------------------------------------------------------------------ players
+  let online = [];
   function drawPlayers() {
     playersLayer.clearLayers();
     for (const p of players) {
@@ -297,15 +336,180 @@
     }
   }
   async function loadPlayers() {
-    if (!info.players) return;
-    try { players = (await (await fetch('api/players')).json()).players; drawPlayers(); } catch (e) { /* retry later */ }
+    if (!info.players && !info.online) return;
+    try {
+      const r = await (await fetch('api/players')).json();
+      players = r.players || [];
+      drawPlayers();
+      if (info.online) { online = r.online || []; drawOnline(r.max || 0); }
+    } catch (e) { /* retry later */ }
+  }
+  function flyTo(p) {
+    const dim = info.dimensions.find(d => d.id === p.dimension);
+    if (!dim) return;
+    if (dim !== current) setDimension(dim);
+    map.setView(toLatLng(p.x, p.y, p.z), Math.max(map.getZoom(), NATIVE));
+  }
+
+  // ------------------------------------------------------------------ side panel (chat, online list)
+  const side = document.getElementById('side');
+  const tabs = document.getElementById('side-tabs');
+  const chatList = document.getElementById('chat-list');
+  const onlineList = document.getElementById('online-list');
+  const panes = [];
+  function addTab(id, label, pane) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'tab');
+    b.dataset.tab = id;
+    b.textContent = label;
+    b.addEventListener('click', () => { side.classList.remove('collapsed'); selectTab(id); });
+    tabs.appendChild(b);
+    panes.push({ id, button: b, pane });
+  }
+  function selectTab(id) {
+    for (const p of panes) {
+      p.button.setAttribute('aria-selected', String(p.id === id));
+      p.pane.hidden = p.id !== id;
+    }
+    try { localStorage.setItem('webmap.tab', id); } catch (e) { /* ignore */ }
+    if (id === 'chat') chatList.parentElement.scrollTop = chatList.parentElement.scrollHeight;
+  }
+  if (info.chat) addTab('chat', t('chat'), chatList);
+  if (info.online) addTab('online', t('online'), onlineList);
+  if (panes.length) {
+    const toggle = document.createElement('button');
+    toggle.type = 'button';
+    toggle.className = 'toggle';
+    const setToggle = () => {
+      const collapsed = side.classList.contains('collapsed');
+      toggle.textContent = collapsed ? '▴' : '▾';
+      toggle.title = collapsed ? t('show') : t('hide');
+    };
+    toggle.addEventListener('click', () => {
+      side.classList.toggle('collapsed');
+      setToggle();
+      try { localStorage.setItem('webmap.collapsed', side.classList.contains('collapsed') ? '1' : ''); } catch (e) { /* ignore */ }
+    });
+    tabs.appendChild(toggle);
+    let saved = null;
+    try {
+      saved = localStorage.getItem('webmap.tab');
+      if (localStorage.getItem('webmap.collapsed')) side.classList.add('collapsed');
+    } catch (e) { /* ignore */ }
+    selectTab(panes.some(p => p.id === saved) ? saved : panes[0].id);
+    setToggle();
+    side.hidden = false;
+    L.DomEvent.disableClickPropagation(side);
+    L.DomEvent.disableScrollPropagation(side);
+  }
+
+  function drawOnline(max) {
+    const tab = panes.find(p => p.id === 'online');
+    if (tab) tab.button.textContent = `${t('online')} (${online.length}${max ? '/' + max : ''})`;
+    onlineList.replaceChildren();
+    if (online.length === 0) {
+      const li = document.createElement('li');
+      li.className = 'empty';
+      li.textContent = t('nobody');
+      onlineList.appendChild(li);
+      return;
+    }
+    for (const name of [...online].sort((a, b) => a.localeCompare(b))) {
+      const li = document.createElement('li');
+      li.textContent = name;
+      const pos = players.find(p => p.name === name);
+      if (pos) {
+        li.className = 'located';
+        li.addEventListener('click', () => flyTo(pos));
+      }
+      onlineList.appendChild(li);
+    }
+  }
+
+  let chatSince = 0;
+  const timeFormat = new Intl.DateTimeFormat(LANG, { hour: '2-digit', minute: '2-digit' });
+  function addChat(m) {
+    const li = document.createElement('li');
+    const time = document.createElement('span');
+    time.className = 'time';
+    time.textContent = timeFormat.format(new Date(m.time));
+    li.appendChild(time);
+    if (m.kind === 'chat') {
+      const name = document.createElement('span');
+      name.className = 'name';
+      name.textContent = `<${m.name}> `;
+      li.appendChild(name);
+      li.appendChild(document.createTextNode(m.text));
+    } else {
+      const ev = document.createElement('span');
+      ev.className = 'event';
+      ev.textContent = `${m.name} ${t(m.kind === 'join' ? 'joined' : 'left')}`;
+      li.appendChild(ev);
+    }
+    chatList.appendChild(li);
+  }
+  async function loadChat() {
+    if (!info.chat) return;
+    try {
+      const r = await (await fetch(`api/chat?since=${chatSince}`)).json();
+      if (r.last < chatSince) { chatSince = 0; chatList.replaceChildren(); return; } // server restarted
+      const box = chatList.parentElement;
+      const atBottom = box.scrollHeight - box.scrollTop - box.clientHeight < 20;
+      chatList.querySelector('.empty')?.remove();
+      for (const m of r.messages) addChat(m);
+      chatSince = r.last;
+      while (chatList.children.length > 300) chatList.firstChild.remove();
+      if (chatList.children.length === 0) {
+        const li = document.createElement('li');
+        li.className = 'empty';
+        li.textContent = t('noChat');
+        chatList.appendChild(li);
+      }
+      if (atBottom) box.scrollTop = box.scrollHeight;
+    } catch (e) { /* retry later */ }
+  }
+
+  // ------------------------------------------------------------------ live tile updates
+  // The server lists the tiles it wrote; only those are fetched again, in place, without flicker.
+  let changeSeq = -1;
+  async function loadChanges() {
+    try {
+      const r = await (await fetch(`api/changes?since=${changeSeq}`)).json();
+      const first = changeSeq < 0;
+      changeSeq = r.seq;
+      if (first) return;
+      if (r.reset) {
+        hitCache.clear();
+        if (tiles) tiles.redraw();
+        if (hitLayer) hitLayer.redraw();
+        return;
+      }
+      for (const [dim, level, x, y] of r.tiles) {
+        if (dim !== current.key) continue;
+        const tile = tiles && tiles._tiles[`${x}:${y}:${NATIVE - level}`];
+        if (tile) tile.el.src = `tiles/${dim}/${level}/${x}/${y}.png?v=${r.seq}`;
+        if (hitLayer) hitLayer.refreshTile(level, x, y, r.seq);
+      }
+    } catch (e) { /* retry later */ }
+  }
+
+  // The page follows config changes (title, layers, chat...) by reloading itself.
+  async function checkInfo() {
+    try {
+      const fresh = await (await fetch('api/info')).json();
+      if (fresh.revision !== info.revision) location.reload();
+    } catch (e) { /* server restarting */ }
   }
 
   setDimension(current);
   await loadClaims();
   loadPlayers();
+  loadChat();
+  loadChanges();
   setInterval(loadClaims, 30000);
   setInterval(loadPlayers, 3000);
-  // Refresh tiles from time to time; unchanged tiles answer 304 Not Modified.
-  setInterval(() => { if (tiles) tiles.redraw(); hitCache.clear(); if (hitLayer) hitLayer.redraw(); }, 120000);
+  setInterval(loadChat, 3000);
+  setInterval(loadChanges, 5000);
+  setInterval(checkInfo, 30000);
 })();

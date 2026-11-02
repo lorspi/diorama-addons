@@ -3,7 +3,11 @@ package io.github.dioramaaddons.webmap.config;
 import java.util.List;
 import net.neoforged.neoforge.common.ModConfigSpec;
 
-/** Common config: {@code config/dioaddons_webmap-common.toml}. Read when the server starts. */
+/**
+ * Common config: {@code config/dioaddons_webmap-common.toml}. The {@code http}, {@code web} and {@code layers}
+ * sections apply while the server runs (the file is watched, and {@code /webmap reload} reads it by hand); {@code render}
+ * changes need a server restart.
+ */
 public final class WebMapConfig {
     public static final ModConfigSpec SPEC;
 
@@ -23,13 +27,24 @@ public final class WebMapConfig {
     public static final ModConfigSpec.BooleanValue RENDER_MISSING_ON_START;
     public static final ModConfigSpec.ConfigValue<List<? extends String>> DIMENSIONS;
 
+    public enum Language { AUTO, EN, ES }
+
+    public static final ModConfigSpec.ConfigValue<String> TITLE;
+    public static final ModConfigSpec.ConfigValue<String> FAVICON;
+    public static final ModConfigSpec.EnumValue<Language> LANGUAGE;
+
     public static final ModConfigSpec.BooleanValue SHOW_CLAIMS;
     public static final ModConfigSpec.BooleanValue SHOW_PLAYERS;
     public static final ModConfigSpec.IntValue PLAYER_UPDATE_SECONDS;
+    public static final ModConfigSpec.BooleanValue SHOW_ONLINE_LIST;
+    public static final ModConfigSpec.BooleanValue SHOW_CHAT;
+    public static final ModConfigSpec.BooleanValue CHAT_JOIN_LEAVE;
+    public static final ModConfigSpec.IntValue CHAT_HISTORY;
 
     static {
         ModConfigSpec.Builder b = new ModConfigSpec.Builder();
-        b.push("http");
+        b.comment("Changes here restart the web server (not the game server) when the file is saved or after /webmap reload.",
+                "/webmap restart restarts it by hand.").push("http");
         HTTP_ENABLED = b.comment("Start the embedded web server.").define("enabled", true);
         BIND = b.comment("Address to listen on. 0.0.0.0 = every interface, 127.0.0.1 = this machine only.")
                 .define("bind", "0.0.0.0");
@@ -38,7 +53,17 @@ public final class WebMapConfig {
         HTTP_THREADS = b.comment("Threads answering web requests.").defineInRange("threads", 2, 1, 16);
         b.pop();
 
-        b.push("render");
+        b.comment("Look of the web page. Applied when the file is saved (or /webmap reload); open pages reload by themselves.").push("web");
+        TITLE = b.comment("Title of the web page. Empty = the server's MOTD.").define("title", "");
+        FAVICON = b.comment("Icon of the web page: an http(s) URL, or a file path relative to the server folder",
+                "(png, ico, svg, gif, jpg or webp, up to 1 MB), e.g. \"server-icon.png\" or \"config/map-icon.png\".",
+                "Empty = server-icon.png when the server has one, otherwise the mod's own icon.")
+                .define("favicon", "");
+        LANGUAGE = b.comment("Language of the web page. AUTO follows the visitor's browser.")
+                .defineEnum("language", Language.AUTO);
+        b.pop();
+
+        b.comment("Changes in this section need a server restart.").push("render");
         RENDER_ENABLED = b.comment("Render tiles in the background.").define("enabled", true);
         STYLE = b.comment("DIORAMA: angled view with textures, sun and shadows, like the Diorama map.",
                 "TOP_DOWN: flat view with vanilla map colours (faster). Changing it renders everything again.")
@@ -59,13 +84,21 @@ public final class WebMapConfig {
                 .defineListAllowEmpty("dimensions", List.of(), () -> "minecraft:overworld", o -> o instanceof String);
         b.pop();
 
-        b.push("layers");
+        b.comment("What the web page shows. Applied when the file is saved (or /webmap reload); open pages reload by themselves.")
+                .push("layers");
         SHOW_CLAIMS = b.comment("Show land claims (name and owner only) when Diorama Addons: Claims is installed.",
                 "Members and permissions are never published.").define("showClaims", true);
-        SHOW_PLAYERS = b.comment("Publish online player positions. Off by default because the map may be public.")
-                .define("showPlayers", false);
-        PLAYER_UPDATE_SECONDS = b.comment("Seconds between player position updates.")
+        SHOW_PLAYERS = b.comment("Show online players on the map (name and position). Off by default because the map",
+                "may be public. Spectators are never shown.").define("showPlayers", false);
+        PLAYER_UPDATE_SECONDS = b.comment("Seconds between player position and online list updates.")
                 .defineInRange("playerUpdateSeconds", 2, 1, 60);
+        SHOW_ONLINE_LIST = b.comment("Show the list of connected players (names only) on the web page.")
+                .define("showOnlineList", true);
+        SHOW_CHAT = b.comment("Show the public chat on the web page (read only). Off by default because the map may",
+                "be public. Only messages sent while the server runs are kept, in memory.").define("showChat", false);
+        CHAT_JOIN_LEAVE = b.comment("Also show players joining and leaving in the web chat.")
+                .define("chatJoinLeave", true);
+        CHAT_HISTORY = b.comment("Chat messages kept for the web page.").defineInRange("chatHistory", 100, 10, 1000);
         b.pop();
         SPEC = b.build();
     }

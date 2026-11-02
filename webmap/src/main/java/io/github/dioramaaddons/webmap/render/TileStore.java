@@ -13,9 +13,15 @@ import org.jetbrains.annotations.Nullable;
 /** Disk cache: {@code <root>/<dimKey>/<zoom>/<x>_<y>.png}. */
 public final class TileStore {
     private final Path root;
+    private volatile @Nullable TileChangeLog changes;
 
     public TileStore(Path root) {
         this.root = root;
+    }
+
+    /** Every later write, delete and clear is reported to {@code log}. */
+    public void reportTo(TileChangeLog log) {
+        this.changes = log;
     }
 
     public Path root() {
@@ -58,7 +64,9 @@ public final class TileStore {
             }
         }
         if (empty) {
-            Files.deleteIfExists(p);
+            if (Files.deleteIfExists(p)) {
+                changed(dimKey, zoom, x, y);
+            }
             return;
         }
         Files.createDirectories(p.getParent());
@@ -67,9 +75,21 @@ public final class TileStore {
         Path tmp = p.resolveSibling(p.getFileName() + ".tmp");
         ImageIO.write(img, "png", tmp.toFile());
         Files.move(tmp, p, StandardCopyOption.REPLACE_EXISTING, StandardCopyOption.ATOMIC_MOVE);
+        changed(dimKey, zoom, x, y);
+    }
+
+    private void changed(String dimKey, int zoom, int x, int y) {
+        TileChangeLog log = changes;
+        if (log != null) {
+            log.record(dimKey, zoom, x, y);
+        }
     }
 
     public void clear() throws IOException {
+        TileChangeLog log = changes;
+        if (log != null) {
+            log.reset();
+        }
         if (!Files.exists(root)) {
             return;
         }

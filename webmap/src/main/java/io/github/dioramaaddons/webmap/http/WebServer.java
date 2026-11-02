@@ -29,17 +29,22 @@ import org.slf4j.Logger;
 public final class WebServer {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static final Pattern TILE = Pattern.compile("^/(tiles|hits)/([a-z0-9_.+~-]{1,64})/(\\d)/(-?\\d{1,7})/(-?\\d{1,7})\\.png$");
-    private static final Map<String, String> STATIC = Map.of(
-            "/index.html", "text/html; charset=utf-8",
-            "/app.js", "text/javascript; charset=utf-8",
-            "/style.css", "text/css; charset=utf-8",
-            "/vendor/leaflet/leaflet.js", "text/javascript; charset=utf-8",
-            "/vendor/leaflet/leaflet.css", "text/css; charset=utf-8",
-            "/vendor/leaflet/images/layers.png", "image/png",
-            "/vendor/leaflet/images/layers-2x.png", "image/png",
-            "/vendor/leaflet/images/marker-icon.png", "image/png",
-            "/vendor/leaflet/images/marker-icon-2x.png", "image/png",
-            "/vendor/leaflet/images/marker-shadow.png", "image/png");
+    private static final Map<String, String> STATIC = Map.ofEntries(
+            Map.entry("/index.html", "text/html; charset=utf-8"),
+            Map.entry("/app.js", "text/javascript; charset=utf-8"),
+            Map.entry("/style.css", "text/css; charset=utf-8"),
+            Map.entry("/vendor/leaflet/leaflet.js", "text/javascript; charset=utf-8"),
+            Map.entry("/vendor/leaflet/leaflet.css", "text/css; charset=utf-8"),
+            Map.entry("/vendor/leaflet/images/layers.png", "image/png"),
+            Map.entry("/vendor/leaflet/images/layers-2x.png", "image/png"),
+            Map.entry("/vendor/leaflet/images/marker-icon.png", "image/png"),
+            Map.entry("/vendor/leaflet/images/marker-icon-2x.png", "image/png"),
+            Map.entry("/vendor/leaflet/images/marker-shadow.png", "image/png"),
+            Map.entry("/favicon.png", "image/png"));
+    /** 1×1 transparent PNG, answered for tiles that do not exist (yet) so browsers log no errors. */
+    private static final byte[] EMPTY_PNG = java.util.Base64.getDecoder().decode(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAAC0lEQVR4nGNgAAIAAAUAAXpeqz8AAAAASUVORK5CYII=");
+    private static final Pattern SINCE = Pattern.compile("(?:^|&)since=(-?\\d{1,19})(?:&|$)");
 
     /** Provides the data the server publishes. Implementations must be thread-safe. */
     public interface Source {
@@ -55,7 +60,20 @@ public final class WebServer {
         String claimsJson();
 
         String playersJson();
+
+        String chatJson(long since);
+
+        String changesJson(long since);
+
+        /** Page title, plain text. */
+        String title();
+
+        /** Page icon, or null for the bundled one. */
+        @Nullable Favicon favicon();
     }
+
+    /** Either a redirect to an external URL or an image to serve. */
+    public record Favicon(@Nullable String url, byte @Nullable [] bytes, String contentType) {}
 
     private final Source source;
     private final Map<String, byte[]> staticFiles = new HashMap<>();
@@ -128,8 +146,13 @@ public final class WebServer {
                 return;
             }
             String path = ex.getRequestURI().getPath();
-            if (path.equals("/")) {
-                path = "/index.html";
+            if (path.equals("/") || path.equals("/index.html")) {
+                index(ex);
+                return;
+            }
+            if (path.equals("/favicon") || path.equals("/favicon.ico")) {
+                favicon(ex);
+                return;
             }
             byte[] file = staticFiles.get(path);
             if (file != null) {
@@ -140,11 +163,72 @@ public final class WebServer {
                 case "/api/info" -> json(ex, source::infoJson);
                 case "/api/claims" -> json(ex, source::claimsJson);
                 case "/api/players" -> json(ex, source::playersJson);
+                case "/api/chat" -> json(ex, () -> source.chatJson(since(ex)));
+                case "/api/changes" -> json(ex, () -> source.changesJson(since(ex)));
                 default -> tile(ex, path);
             }
         } catch (RuntimeException e) {
             LOGGER.warn("Web map request failed", e);
         }
+    }
+
+    private void index(HttpExchange ex) throws IOException {
+        byte[] page = staticFiles.get("/index.html");
+        if (page == null) {
+            notFound(ex);
+            return;
+        }
+        String html = new String(page, StandardCharsets.UTF_8).replace("<title>World Map</title>",
+                "<title>" + escapeHtml(source.title()) + "</title>");
+        send(ex, 200, STATIC.get("/index.html"), html.getBytes(StandardCharsets.UTF_8), "no-cache");
+    }
+
+    private void favicon(HttpExchange ex) throws IOException {
+        Favicon icon = source.favicon();
+        if (icon != null && icon.url() != null) {
+            ex.getResponseHeaders().add("Location", icon.url());
+            send(ex, 302, "text/plain; charset=utf-8", new byte[0], "no-cache");
+        } else if (icon != null && icon.bytes() != null) {
+            send(ex, 200, icon.contentType(), icon.bytes(), "no-cache");
+        } else {
+            byte[] own = staticFiles.get("/favicon.png");
+            if (own == null) {
+                notFound(ex);
+            } else {
+                send(ex, 200, "image/png", own, "public, max-age=300");
+            }
+        }
+    }
+
+    static long since(HttpExchange ex) {
+        String query = ex.getRequestURI().getRawQuery();
+        if (query == null) {
+            return -1;
+        }
+        Matcher m = SINCE.matcher(query);
+        if (!m.find()) {
+            return -1;
+        }
+        try {
+            return Long.parseLong(m.group(1));
+        } catch (NumberFormatException e) {
+            return -1;
+        }
+    }
+
+    static String escapeHtml(String s) {
+        StringBuilder b = new StringBuilder(s.length());
+        for (char c : s.toCharArray()) {
+            switch (c) {
+                case '&' -> b.append("&amp;");
+                case '<' -> b.append("&lt;");
+                case '>' -> b.append("&gt;");
+                case '"' -> b.append("&quot;");
+                case '\'' -> b.append("&#39;");
+                default -> b.append(c);
+            }
+        }
+        return b.toString();
     }
 
     private void json(HttpExchange ex, Supplier<String> body) throws IOException {
@@ -162,7 +246,8 @@ public final class WebServer {
         int y = Integer.parseInt(m.group(5));
         Path file = m.group(1).equals("tiles") ? source.tilePath(m.group(2), zoom, x, y) : source.hitPath(m.group(2), zoom, x, y);
         if (file == null || !Files.isRegularFile(file)) {
-            notFound(ex);
+            // Nothing rendered there (yet): a transparent pixel instead of a 404, which browsers log as an error.
+            send(ex, 200, "image/png", EMPTY_PNG, "no-cache");
             return;
         }
         String etag = "\"" + Files.getLastModifiedTime(file).toMillis() + "-" + Files.size(file) + "\"";
@@ -176,7 +261,7 @@ public final class WebServer {
         try {
             bytes = Files.readAllBytes(file);
         } catch (IOException e) {
-            notFound(ex);
+            send(ex, 200, "image/png", EMPTY_PNG, "no-cache");
             return;
         }
         send(ex, 200, "image/png", bytes, "no-cache");

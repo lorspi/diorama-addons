@@ -4,6 +4,7 @@ import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import io.github.dioramaaddons.webmap.config.WebMapConfig;
 import io.github.dioramaaddons.webmap.http.WebServer;
+import io.github.dioramaaddons.webmap.layer.ChatLayer;
 import io.github.dioramaaddons.webmap.layer.ClaimsLayer;
 import io.github.dioramaaddons.webmap.layer.PlayersLayer;
 import io.github.dioramaaddons.render.ObliqueRenderer;
@@ -12,12 +13,17 @@ import io.github.dioramaaddons.webmap.render.MapRenderer;
 import io.github.dioramaaddons.webmap.render.ObliqueTileRenderer;
 import io.github.dioramaaddons.webmap.render.TileMath;
 import io.github.dioramaaddons.webmap.render.TileRenderer;
+import io.github.dioramaaddons.webmap.render.TileChangeLog;
 import io.github.dioramaaddons.webmap.render.TileStore;
+import java.io.IOException;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Locale;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import net.minecraft.ChatFormatting;
 import net.minecraft.SharedConstants;
 import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
@@ -37,11 +43,18 @@ public final class WebMapService implements WebServer.Source {
     private final boolean oblique;
     private final @Nullable MapRenderer renderer;
     private final ClaimsLayer claims = new ClaimsLayer();
-    private final boolean claimsEnabled;
-    private final PlayersLayer players;
+    private final PlayersLayer players = new PlayersLayer();
+    private final ChatLayer chat = new ChatLayer();
+    private final TileChangeLog changes = new TileChangeLog(8192);
     private final WebServer web;
-    private final String infoJson;
     private final int zoomOutLevels;
+    /** Settings that may change while running; rebuilt by {@link #applyConfig()}. */
+    private volatile Live live;
+    /** HTTP settings the web server was last started with. */
+    private @Nullable String httpSettings;
+
+    private record Live(String infoJson, String title, WebServer.@Nullable Favicon favicon, boolean claims,
+            boolean positions, boolean online, boolean chat, boolean joinLeave, int chatHistory, int playerSeconds) {}
 
     private WebMapService(MinecraftServer server) {
         this.server = server;
@@ -74,12 +87,12 @@ public final class WebMapService implements WebServer.Source {
                             WebMapConfig.SCAN_INTERVAL_SECONDS.get())
                     : null;
         }
-        this.claimsEnabled = WebMapConfig.SHOW_CLAIMS.get();
-        if (claimsEnabled) {
-            claims.start();
+        store.reportTo(changes);
+        if (hitStore != null) {
+            hitStore.reportTo(changes);
         }
-        this.players = new PlayersLayer(WebMapConfig.SHOW_PLAYERS.get(), WebMapConfig.PLAYER_UPDATE_SECONDS.get());
-        this.infoJson = buildInfo();
+        claims.start();
+        this.live = buildLive();
         this.web = new WebServer(this);
     }
 
@@ -93,16 +106,42 @@ public final class WebMapService implements WebServer.Source {
         if (s.renderer != null && WebMapConfig.RENDER_MISSING_ON_START.get()) {
             s.renderer.scan(null, false);
         }
-        if (WebMapConfig.HTTP_ENABLED.get()) {
-            s.web.start(WebMapConfig.BIND.get(), WebMapConfig.PORT.get(), WebMapConfig.HTTP_THREADS.get());
+        s.startHttp(false);
+    }
+
+    /** Starts, or restarts, the web server with the current config. Returns whether it is running after. */
+    public synchronized boolean startHttp(boolean force) {
+        String settings = WebMapConfig.HTTP_ENABLED.get() + "|" + WebMapConfig.BIND.get() + "|" + WebMapConfig.PORT.get()
+                + "|" + WebMapConfig.HTTP_THREADS.get();
+        if (!force && settings.equals(httpSettings) && (web.running() || !WebMapConfig.HTTP_ENABLED.get())) {
+            return web.running();
         }
+        httpSettings = settings;
+        web.stop();
+        if (WebMapConfig.HTTP_ENABLED.get()) {
+            web.start(WebMapConfig.BIND.get(), WebMapConfig.PORT.get(), WebMapConfig.HTTP_THREADS.get());
+        } else {
+            WebMapMod.LOGGER.info("Web map HTTP server disabled in the config");
+        }
+        return web.running();
+    }
+
+    /** The config file changed (any thread): apply page and layer settings, restart HTTP if its settings changed. */
+    public void applyConfig() {
+        live = buildLive();
+        if (!live.chat()) {
+            chat.clear();
+        }
+        startHttp(false);
     }
 
     public static void stop() {
         WebMapService s = instance;
         instance = null;
         if (s != null) {
-            s.web.stop();
+            synchronized (s) {
+                s.web.stop();
+            }
             if (s.renderer != null) {
                 s.renderer.stop();
             }
@@ -112,10 +151,27 @@ public final class WebMapService implements WebServer.Source {
 
     /** Server thread. */
     public void tick() {
-        if (claimsEnabled) {
+        Live l = live;
+        if (l.claims()) {
             claims.tick();
         }
-        players.tick(server);
+        players.tick(server, l.positions(), l.online(), l.playerSeconds());
+    }
+
+    /** Server thread: a public chat message. */
+    public void onChat(String name, String text) {
+        Live l = live;
+        if (l.chat()) {
+            chat.add(ChatLayer.Kind.CHAT, name, text, l.chatHistory());
+        }
+    }
+
+    /** Server thread: a player joined or left. */
+    public void onJoinLeave(String name, boolean joined) {
+        Live l = live;
+        if (l.chat() && l.joinLeave()) {
+            chat.add(joined ? ChatLayer.Kind.JOIN : ChatLayer.Kind.LEAVE, name, "", l.chatHistory());
+        }
     }
 
     public void markChunk(ServerLevel level, int chunkX, int chunkZ) {
@@ -133,16 +189,94 @@ public final class WebMapService implements WebServer.Source {
     }
 
     public boolean claimsAvailable() {
-        return claimsEnabled && claims.available();
+        return live.claims() && claims.available();
+    }
+
+    public boolean playersShown() {
+        return live.positions();
+    }
+
+    public boolean chatShown() {
+        return live.chat();
+    }
+
+    public boolean onlineListShown() {
+        return live.online();
+    }
+
+    private Live buildLive() {
+        String title = WebMapConfig.TITLE.get().strip();
+        if (title.isEmpty()) {
+            title = ChatFormatting.stripFormatting(server.getMotd());
+        }
+        if (title == null || title.isBlank()) {
+            title = "World Map";
+        }
+        boolean claimsOn = WebMapConfig.SHOW_CLAIMS.get();
+        boolean positions = WebMapConfig.SHOW_PLAYERS.get();
+        boolean online = WebMapConfig.SHOW_ONLINE_LIST.get();
+        boolean chatOn = WebMapConfig.SHOW_CHAT.get();
+        WebServer.Favicon favicon = resolveFavicon(WebMapConfig.FAVICON.get().strip());
+        String info = buildInfo(title, claimsOn && claims.available(), positions, online, chatOn);
+        return new Live(info, title, favicon, claimsOn, positions, online, chatOn, WebMapConfig.CHAT_JOIN_LEAVE.get(),
+                WebMapConfig.CHAT_HISTORY.get(), WebMapConfig.PLAYER_UPDATE_SECONDS.get());
+    }
+
+    private static final long MAX_FAVICON_BYTES = 1024 * 1024;
+
+    private WebServer.@Nullable Favicon resolveFavicon(String value) {
+        String lower = value.toLowerCase(Locale.ROOT);
+        if (lower.startsWith("http://") || lower.startsWith("https://")) {
+            return new WebServer.Favicon(value, null, "");
+        }
+        Path dir = server.getServerDirectory();
+        Path file;
+        if (value.isEmpty()) {
+            file = dir.resolve("server-icon.png");
+            if (!Files.isRegularFile(file)) {
+                return null;
+            }
+        } else {
+            file = dir.resolve(value).normalize();
+        }
+        String type = faviconType(file.getFileName() == null ? "" : file.getFileName().toString());
+        if (type == null) {
+            WebMapMod.LOGGER.warn("web.favicon must be an http(s) URL or a png, ico, svg, gif, jpg or webp file: {}", value);
+            return null;
+        }
+        try {
+            if (Files.size(file) > MAX_FAVICON_BYTES) {
+                WebMapMod.LOGGER.warn("web.favicon is larger than 1 MB: {}", file);
+                return null;
+            }
+            return new WebServer.Favicon(null, Files.readAllBytes(file), type);
+        } catch (IOException e) {
+            WebMapMod.LOGGER.warn("Could not read web.favicon {}: {}", file, e.toString());
+            return null;
+        }
+    }
+
+    /** Content type of an icon file, or null when the extension is not an image (never serve other files). */
+    static @Nullable String faviconType(String fileName) {
+        String n = fileName.toLowerCase(Locale.ROOT);
+        if (n.endsWith(".png")) return "image/png";
+        if (n.endsWith(".ico")) return "image/x-icon";
+        if (n.endsWith(".svg")) return "image/svg+xml";
+        if (n.endsWith(".gif")) return "image/gif";
+        if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
+        if (n.endsWith(".webp")) return "image/webp";
+        return null;
     }
 
     public Set<String> dimensions() {
         return levels.keySet();
     }
 
-    private String buildInfo() {
+    private String buildInfo(String title, boolean claimsOn, boolean positions, boolean online, boolean chatOn) {
         JsonObject o = new JsonObject();
-        o.addProperty("name", server.getMotd());
+        o.addProperty("revision", System.nanoTime());
+        o.addProperty("name", title);
+        o.addProperty("language", WebMapConfig.LANGUAGE.get().name().toLowerCase(Locale.ROOT));
         o.addProperty("minecraftVersion", SharedConstants.getCurrentVersion().getName());
         o.addProperty("tileSize", oblique ? ObliqueTiles.PIXELS : TileMath.TILE_SIZE);
         JsonObject projection = new JsonObject();
@@ -158,8 +292,10 @@ public final class WebMapService implements WebServer.Source {
         }
         o.add("projection", projection);
         o.addProperty("zoomOutLevels", zoomOutLevels);
-        o.addProperty("claims", claimsAvailable());
-        o.addProperty("players", players.enabled());
+        o.addProperty("claims", claimsOn);
+        o.addProperty("players", positions);
+        o.addProperty("online", online);
+        o.addProperty("chat", chatOn);
         JsonArray dims = new JsonArray();
         for (String id : levels.keySet()) {
             JsonObject d = new JsonObject();
@@ -196,12 +332,49 @@ public final class WebMapService implements WebServer.Source {
 
     @Override
     public String infoJson() {
-        return infoJson;
+        return live.infoJson();
     }
 
     @Override
     public String claimsJson() {
-        return claimsEnabled ? claims.json() : "[]";
+        return live.claims() ? claims.json() : "[]";
+    }
+
+    @Override
+    public String chatJson(long since) {
+        return chat.json(live.chat(), Math.max(0, since));
+    }
+
+    @Override
+    public String changesJson(long since) {
+        TileChangeLog.Since r = changes.since(since);
+        JsonObject o = new JsonObject();
+        o.addProperty("seq", r.seq());
+        o.addProperty("reset", r.reset());
+        JsonArray list = new JsonArray();
+        java.util.Set<TileChangeLog.Change> seen = new java.util.HashSet<>();
+        for (TileChangeLog.Change c : r.changes()) {
+            if (seen.add(c)) {
+                JsonArray a = new JsonArray();
+                a.add(c.dimKey());
+                a.add(c.zoom());
+                a.add(c.x());
+                a.add(c.y());
+                list.add(a);
+            }
+        }
+        o.add("tiles", list);
+        return o.toString();
+    }
+
+    @Override
+    public String title() {
+        return live.title();
+    }
+
+    @Override
+    public WebServer.@Nullable Favicon favicon() {
+        return live.favicon();
     }
 
     @Override
