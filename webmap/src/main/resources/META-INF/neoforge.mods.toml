@@ -45,3 +45,7 @@ type = "required"
 versionRange = "*"
 ordering = "AFTER"
 side = "BOTH"
+
+# Copies the public chat of Mochos Esenciales to the web chat; applied only when that mod is installed.
+[[mixins]]
+config = "${mod_id}.mochos.mixins.json"

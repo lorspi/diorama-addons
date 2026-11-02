@@ -290,6 +290,12 @@ Research and the list of Diorama entry points: [clientmap-research.md](clientmap
 54. **Layer check boxes** on the page are per visitor (localStorage) and only offer layers the server
     publishes; turning a layer off on the server still removes it for everyone.
 
+55. **Mochos Esenciales chat on the web.** That mod cancels `ServerChatEvent` and delivers chat with its own
+    payloads, with no event to listen to. A small optional mixin (`compat/mochos`, applied only when the mod is
+    present, `@Pseudo`, `require = 0`) wraps the one `LOGGER.info("<{}> {}", name, text)` call of its global
+    channel in `Chat.send`, which runs after its mute and spam checks. Group and direct messages are never
+    copied. If a future Mochos version changes that method, the web chat just misses its messages.
+
 ## Assumptions to review
 
 - Repository: https://github.com/lorspi/diorama-addons (`issueTrackerURL` points to its issues).

@@ -1,0 +1,13 @@
+{
+  "required": false,
+  "package": "io.github.dioramaaddons.webmap.compat.mochos.mixin",
+  "plugin": "io.github.dioramaaddons.webmap.compat.mochos.MochosMixinPlugin",
+  "compatibilityLevel": "JAVA_21",
+  "minVersion": "0.8",
+  "mixins": [
+    "MochosChatMixin"
+  ],
+  "injectors": {
+    "defaultRequire": 0
+  }
+}

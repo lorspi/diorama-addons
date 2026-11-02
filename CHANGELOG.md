@@ -63,7 +63,8 @@ Each mod is versioned on its own with [Semantic Versioning](https://semver.org/)
   (autosave every five minutes).
 - Zoomed-out levels are refreshed every 15 s while level 0 is still rendering, instead of only when the queue
   is empty, so zooming out no longer shows black while players explore.
-- Land claims from Mochos Esenciales are shown too (read by reflection, no dependency).
+- Land claims and the public chat from Mochos Esenciales are shown too (claims by reflection, chat through an
+  optional mixin; no dependency). Its group and direct messages are never published.
 - Web page: "Spawn" button and marker; check boxes to show or hide claims, players and chat (remembered per
   browser).
 - In-game settings screen for operators (mod list "Config" or `/webmap config`): page title, favicon and the
