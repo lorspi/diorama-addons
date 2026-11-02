@@ -52,6 +52,11 @@ public final class Claim {
         return ownerName;
     }
 
+    void setOwner(UUID owner, String ownerName) {
+        this.owner = owner;
+        this.ownerName = ownerName;
+    }
+
     public void setOwnerName(String ownerName) {
         this.ownerName = ownerName;
     }

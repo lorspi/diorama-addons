@@ -409,6 +409,27 @@ public final class ClaimStore {
         return o;
     }
 
+    /**
+     * Gives a claim to another player. Operators only (admin actor); the new owner's limits are not checked.
+     * When the new owner was a member, their member entry is dropped, since owners have every permission.
+     */
+    public Outcome transfer(Actor actor, UUID claimId, UUID newOwner, String newOwnerName) {
+        Claim claim = claims.get(claimId);
+        if (claim == null) {
+            return Outcome.of(ClaimResult.CLAIM_NOT_FOUND);
+        }
+        if (!actor.admin()) {
+            return Outcome.of(ClaimResult.NOT_OWNER);
+        }
+        if (claim.isOwner(newOwner)) {
+            return Outcome.of(ClaimResult.ALREADY_OWNER);
+        }
+        claim.mutableMembers().remove(newOwner);
+        claim.setOwner(newOwner, newOwnerName);
+        fire(ChangeType.UPDATED, claim);
+        return new Outcome(ClaimResult.SUCCESS, claim);
+    }
+
     /** Keeps stored player names current. Returns true when anything changed. */
     public boolean updatePlayerName(UUID player, String name) {
         boolean changed = false;

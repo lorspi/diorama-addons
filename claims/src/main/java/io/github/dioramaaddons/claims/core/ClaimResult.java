@@ -19,7 +19,8 @@ public enum ClaimResult {
     INVALID_NAME,
     CLAIM_NOT_FOUND,
     MEMBER_NOT_FOUND,
-    CANNOT_ADD_OWNER;
+    CANNOT_ADD_OWNER,
+    ALREADY_OWNER;
 
     public boolean ok() {
         return this == SUCCESS;

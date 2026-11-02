@@ -9,7 +9,11 @@ import io.github.dioramaaddons.claimsapi.ChunkCoord;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.List;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.resources.ResourceKey;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.level.levelgen.Heightmap;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.level.ChunkPos;
 import net.neoforged.neoforge.network.handling.IPayloadContext;
@@ -128,6 +132,87 @@ final class ServerPayloads {
         service.sendState(player, result.ok()
                 ? new StatePayload.Feedback(true, "dioaddons_claims.gui.saved", List.of())
                 : feedback(result, 0));
+    }
+
+    static void adminAction(AdminActionPayload p, IPayloadContext ctx) {
+        ClaimsService service = ClaimsService.get();
+        ServerPlayer player = player(ctx);
+        if (service == null || player == null) {
+            return;
+        }
+        if (!service.isAdmin(player)) {
+            service.sendState(player, new StatePayload.Feedback(false, "dioaddons_claims.error.not_admin", List.of()));
+            return;
+        }
+        switch (p.op()) {
+            case TOGGLE_ADMIN_MODE -> {
+                boolean on = service.toggleBypass(player);
+                service.sendState(player, new StatePayload.Feedback(true,
+                        on ? "dioaddons_claims.admin.bypass_on" : "dioaddons_claims.admin.bypass_off", List.of()));
+            }
+            case TELEPORT -> {
+                var claim = p.claimId().flatMap(id -> service.store().claim(id)).orElse(null);
+                if (claim == null) {
+                    service.sendState(player, feedback(ClaimResult.CLAIM_NOT_FOUND, 0));
+                    return;
+                }
+                ResourceLocation dimId = ResourceLocation.tryParse(claim.dimension());
+                ServerLevel level = dimId == null ? null
+                        : service.server().getLevel(ResourceKey.create(Registries.DIMENSION, dimId));
+                if (level == null || claim.chunks().isEmpty()) {
+                    service.sendState(player, feedback(ClaimResult.CLAIM_NOT_FOUND, 0));
+                    return;
+                }
+                long chunk = centralChunk(claim.chunks());
+                int x = ChunkCoord.unpackX(chunk) * 16 + 8;
+                int z = ChunkCoord.unpackZ(chunk) * 16 + 8;
+                int y = level.getHeight(Heightmap.Types.MOTION_BLOCKING_NO_LEAVES, x, z);
+                if (y <= level.getMinBuildHeight()) {
+                    y = level.getSharedSpawnPos().getY();
+                }
+                player.teleportTo(level, x + 0.5, y, z + 0.5, player.getYRot(), player.getXRot());
+                service.sendState(player, new StatePayload.Feedback(true, "dioaddons_claims.admin.teleported",
+                        List.of(claim.name(), claim.ownerName())));
+            }
+            case TRANSFER -> {
+                var claim = p.claimId().flatMap(id -> service.store().claim(id)).orElse(null);
+                var profile = service.findProfile(p.text().trim());
+                if (profile.isEmpty()) {
+                    service.sendState(player, new StatePayload.Feedback(false,
+                            "dioaddons_claims.error.player_not_found", List.of(p.text().trim())));
+                    return;
+                }
+                ClaimResult r = claim == null ? ClaimResult.CLAIM_NOT_FOUND
+                        : service.store().transfer(service.actor(player), claim.id(), profile.get().getId(),
+                                profile.get().getName()).result();
+                service.sendState(player, r.ok()
+                        ? new StatePayload.Feedback(true, "dioaddons_claims.admin.transferred",
+                                List.of(claim.name(), profile.get().getName()))
+                        : feedback(r, 0));
+            }
+        }
+    }
+
+    /** The claimed chunk nearest to the middle of the claim. */
+    static long centralChunk(java.util.Collection<Long> chunks) {
+        double cx = 0;
+        double cz = 0;
+        for (long c : chunks) {
+            cx += ChunkCoord.unpackX(c);
+            cz += ChunkCoord.unpackZ(c);
+        }
+        cx /= chunks.size();
+        cz /= chunks.size();
+        long best = chunks.iterator().next();
+        double bestD = Double.MAX_VALUE;
+        for (long c : chunks) {
+            double d = Math.pow(ChunkCoord.unpackX(c) - cx, 2) + Math.pow(ChunkCoord.unpackZ(c) - cz, 2);
+            if (d < bestD) {
+                bestD = d;
+                best = c;
+            }
+        }
+        return best;
     }
 
     static StatePayload.Feedback feedback(ClaimResult result, int changed) {

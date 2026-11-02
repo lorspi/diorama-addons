@@ -8,7 +8,8 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
  * call into {@code ClientPayloads} through lambdas, so that class is only loaded on the client.
  */
 public final class ClaimsNetwork {
-    public static final String VERSION = "1";
+    /** Bumped whenever a payload changes: a client and a server with different versions cannot talk. */
+    public static final String VERSION = "2";
 
     private ClaimsNetwork() {}
 
@@ -18,6 +19,7 @@ public final class ClaimsNetwork {
         r.playToServer(UnsubscribePayload.TYPE, UnsubscribePayload.CODEC, ServerPayloads::unsubscribe);
         r.playToServer(ClaimChunksPayload.TYPE, ClaimChunksPayload.CODEC, ServerPayloads::claimChunks);
         r.playToServer(EditClaimPayload.TYPE, EditClaimPayload.CODEC, ServerPayloads::editClaim);
+        r.playToServer(AdminActionPayload.TYPE, AdminActionPayload.CODEC, ServerPayloads::adminAction);
         r.playToClient(OpenScreenPayload.TYPE, OpenScreenPayload.CODEC,
                 (p, ctx) -> io.github.dioramaaddons.claims.client.ClientPayloads.openScreen());
         r.playToClient(StatePayload.TYPE, StatePayload.CODEC,

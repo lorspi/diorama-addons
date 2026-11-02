@@ -4,6 +4,7 @@ import io.github.dioramaaddons.claims.config.ClaimsConfig;
 import io.github.dioramaaddons.claims.core.ClaimStore;
 import io.github.dioramaaddons.claims.core.Permission;
 import io.github.dioramaaddons.claims.core.PermissionTemplate;
+import io.github.dioramaaddons.claims.network.AdminActionPayload;
 import io.github.dioramaaddons.claims.network.ClaimChunksPayload;
 import io.github.dioramaaddons.claims.network.EditClaimPayload;
 import io.github.dioramaaddons.claims.network.RequestStatePayload;
@@ -55,6 +56,8 @@ public final class ClaimsScreen extends Screen {
     private static final int COLOR_OTHER = 0xFFA83232;
     private static final int COLOR_ADMIN = 0xFFC7802B;
     private static final int COLOR_ADMIN_SELECTED = 0xFFF0B060;
+    /** Text and frame colour of everything that acts on another player's claim. */
+    private static final int ADMIN_TEXT = 0xFFF0B060;
     /** Fills drawn over the terrain picture: see-through so the land still reads. */
     private static final int ALPHA_FILL = 0x66000000;
     private static final int GRID_LINE = 0x33000000;
@@ -71,11 +74,19 @@ public final class ClaimsScreen extends Screen {
     private int ticksSinceTerrain;
 
     private @Nullable StatePayload state;
+    /**
+     * Last action result. Kept for a while because the server re-sends the state without it right after a
+     * change (every subscriber gets a fresh state when claims change).
+     */
+    private StatePayload.@Nullable Feedback feedback;
+    private long feedbackUntil;
     private Tab tab = Tab.CLAIMS;
     private @Nullable UUID selectedClaim;
     private @Nullable UUID selectedMember;
     private String nameDraft = "";
     private String memberDraft = "";
+    private String filterDraft = "";
+    private String transferDraft = "";
     private int onlineIndex;
     private int claimScroll;
     private int memberScroll;
@@ -92,6 +103,7 @@ public final class ClaimsScreen extends Screen {
 
     private @Nullable EditBox nameBox;
     private @Nullable EditBox memberBox;
+    private @Nullable EditBox filterBox;
 
     public ClaimsScreen() {
         super(Component.translatable("dioaddons_claims.gui.title"));
@@ -107,6 +119,10 @@ public final class ClaimsScreen extends Screen {
 
     void onState(StatePayload newState) {
         this.state = newState;
+        if (newState.feedback() != null) {
+            feedback = newState.feedback();
+            feedbackUntil = Util.getMillis() + 6000;
+        }
         if (ChunkCoord.pack(newState.centerX(), newState.centerZ()) != terrainCenter || newState.radius() != terrainRadius
                 || !newState.dimension().equals(terrainDimension)) {
             requestTerrain();
@@ -212,6 +228,16 @@ public final class ClaimsScreen extends Screen {
         return d.members().stream().filter(m -> m.id().equals(selectedMember)).findFirst().orElse(null);
     }
 
+    /** True when the claim belongs to someone else (only possible in admin mode). */
+    private static boolean othersClaim(StatePayload.ClaimDetail d) {
+        var player = Minecraft.getInstance().player;
+        return player != null && !d.ownerId().equals(player.getUUID());
+    }
+
+    private boolean adminMode() {
+        return state != null && state.bypass();
+    }
+
     private void select(@Nullable UUID claimId) {
         selectedClaim = claimId;
         selectedMember = null;
@@ -247,6 +273,7 @@ public final class ClaimsScreen extends Screen {
 
         nameBox = null;
         memberBox = null;
+        filterBox = null;
         if (state == null) {
             return;
         }
@@ -268,6 +295,18 @@ public final class ClaimsScreen extends Screen {
     }
 
     private void initClaimsTab(int y) {
+        if (adminMode()) {
+            // Admin mode lists every claim on the server: filter by claim or owner name.
+            filterBox = new EditBox(font, panelX, y + 4, PANEL_W, 16, Component.translatable("dioaddons_claims.gui.admin.filter"));
+            filterBox.setMaxLength(32);
+            filterBox.setValue(filterDraft);
+            filterBox.setHint(Component.translatable("dioaddons_claims.gui.admin.filter").withStyle(ChatFormatting.DARK_GRAY));
+            filterBox.setResponder(v -> {
+                filterDraft = v;
+                claimScroll = 0;
+            });
+            addRenderableWidget(filterBox);
+        }
         y += 24;
         claimListY = y;
         y += CLAIM_ROWS * ROW_H + 6;
@@ -287,6 +326,8 @@ public final class ClaimsScreen extends Screen {
         rename.active = d != null;
         addRenderableWidget(rename);
         y += 20;
+        boolean admin = state.admin();
+        int deleteW = admin && adminMode() ? PANEL_W - 52 : PANEL_W;
         Button delete = Button.builder(Component.translatable(confirmDelete
                 ? "dioaddons_claims.gui.delete_confirm" : "dioaddons_claims.gui.delete"), b -> {
             if (selectedClaim == null) {
@@ -299,9 +340,49 @@ public final class ClaimsScreen extends Screen {
                 send(new EditClaimPayload(EditClaimPayload.Op.DELETE, selectedClaim, Optional.empty(), "", 0));
                 confirmDelete = false;
             }
-        }).bounds(panelX, y, PANEL_W, 16).build();
+        }).bounds(panelX, y, deleteW, 16).build();
         delete.active = d != null;
         addRenderableWidget(delete);
+        if (!admin) {
+            return;
+        }
+        if (adminMode()) {
+            Button go = Button.builder(Component.translatable("dioaddons_claims.gui.admin.teleport"), b -> {
+                if (selectedClaim != null) {
+                    send(new AdminActionPayload(AdminActionPayload.Op.TELEPORT, Optional.of(selectedClaim), ""));
+                }
+            }).bounds(panelX + PANEL_W - 50, y, 50, 16)
+                    .tooltip(net.minecraft.client.gui.components.Tooltip.create(
+                            Component.translatable("dioaddons_claims.gui.admin.teleport.desc")))
+                    .build();
+            go.active = d != null;
+            addRenderableWidget(go);
+        }
+        y += 20;
+        MutableComponent modeLabel = Component.translatable(adminMode()
+                ? "dioaddons_claims.gui.admin.mode_on" : "dioaddons_claims.gui.admin.mode_off");
+        addRenderableWidget(Button.builder(adminMode() ? modeLabel.withStyle(ChatFormatting.GOLD) : modeLabel,
+                        b -> send(new AdminActionPayload(AdminActionPayload.Op.TOGGLE_ADMIN_MODE, Optional.empty(), "")))
+                .bounds(panelX, y, PANEL_W, 16)
+                .tooltip(net.minecraft.client.gui.components.Tooltip.create(
+                        Component.translatable("dioaddons_claims.gui.admin.mode.desc")))
+                .build());
+        if (adminMode() && d != null) {
+            y += 20;
+            EditBox transferBox = new EditBox(font, panelX, y, PANEL_W - 72, 16,
+                    Component.translatable("dioaddons_claims.gui.admin.new_owner"));
+            transferBox.setMaxLength(16);
+            transferBox.setValue(transferDraft);
+            transferBox.setResponder(v -> transferDraft = v);
+            transferBox.setHint(Component.translatable("dioaddons_claims.gui.admin.new_owner").withStyle(ChatFormatting.DARK_GRAY));
+            addRenderableWidget(transferBox);
+            addRenderableWidget(Button.builder(Component.translatable("dioaddons_claims.gui.admin.transfer"), b -> {
+                if (!transferDraft.isBlank()) {
+                    send(new AdminActionPayload(AdminActionPayload.Op.TRANSFER, Optional.of(d.id()), transferDraft.trim()));
+                    transferDraft = "";
+                }
+            }).bounds(panelX + PANEL_W - 70, y, 70, 16).build());
+        }
     }
 
     private void initMembersTab(int y) {
@@ -407,6 +488,17 @@ public final class ClaimsScreen extends Screen {
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         super.render(g, mouseX, mouseY, partialTick);
         g.drawString(font, title, gridX, 6, 0xFFFFFF);
+        if (adminMode()) {
+            g.drawString(font, Component.translatable("dioaddons_claims.gui.admin.title"), gridX + font.width(title) + 6, 6,
+                    ADMIN_TEXT);
+            // Orange frame around the panel: every action here can touch other players' claims.
+            g.renderOutline(panelX - 3, panelY - 3, PANEL_W + 6, height - panelY - 6, ADMIN_TEXT);
+        }
+        StatePayload.ClaimDetail sel = selectedDetail();
+        if (sel != null && othersClaim(sel)) {
+            String banner = Component.translatable("dioaddons_claims.gui.admin.editing", sel.ownerName()).getString();
+            g.drawString(font, font.plainSubstrByWidth(banner, PANEL_W), panelX, 6, ADMIN_TEXT);
+        }
         if (state == null) {
             g.drawCenteredString(font, Component.translatable("dioaddons_claims.gui.loading"), width / 2, height / 2, 0xAAAAAA);
             return;
@@ -518,13 +610,11 @@ public final class ClaimsScreen extends Screen {
         int y = panelY + 20;
         switch (tab) {
             case CLAIMS -> {
-                g.drawString(font, Component.translatable("dioaddons_claims.gui.usage_chunks", state.usedChunks(),
-                        state.maxChunks()), panelX, y, 0xFFFFFF);
-                g.drawString(font, Component.translatable("dioaddons_claims.gui.usage_claims", state.usedClaims(),
-                        state.maxClaims()), panelX, y + 10, 0xFFFFFF);
-                if (state.bypass()) {
-                    g.drawString(font, Component.translatable("dioaddons_claims.gui.bypass"), panelX + 100, y,
-                            0xFFF0B060);
+                if (!adminMode()) {
+                    g.drawString(font, Component.translatable("dioaddons_claims.gui.usage_chunks", state.usedChunks(),
+                            state.maxChunks()), panelX, y, 0xFFFFFF);
+                    g.drawString(font, Component.translatable("dioaddons_claims.gui.usage_claims", state.usedClaims(),
+                            state.maxClaims()), panelX, y + 10, 0xFFFFFF);
                 }
                 renderClaimList(g, mouseX, mouseY);
             }
@@ -535,7 +625,8 @@ public final class ClaimsScreen extends Screen {
                             PANEL_W, 0xAAAAAA);
                     return;
                 }
-                g.drawString(font, Component.translatable("dioaddons_claims.gui.members_of", d.name()), panelX, y, 0xFFFFFF);
+                g.drawString(font, font.plainSubstrByWidth(Component.translatable("dioaddons_claims.gui.members_of",
+                        d.name()).getString(), PANEL_W), panelX, y, othersClaim(d) ? ADMIN_TEXT : 0xFFFFFF);
                 renderMemberList(g, d, mouseX, mouseY);
                 if (selectedMember == null) {
                     g.drawWordWrap(font, Component.translatable("dioaddons_claims.gui.select_member"), panelX,
@@ -550,7 +641,8 @@ public final class ClaimsScreen extends Screen {
                             PANEL_W, 0xAAAAAA);
                     return;
                 }
-                g.drawString(font, Component.translatable("dioaddons_claims.gui.public_of", d.name()), panelX, y, 0xFFFFFF);
+                g.drawString(font, font.plainSubstrByWidth(Component.translatable("dioaddons_claims.gui.public_of",
+                        d.name()).getString(), PANEL_W), panelX, y, othersClaim(d) ? ADMIN_TEXT : 0xFFFFFF);
                 g.drawString(font, Component.translatable("dioaddons_claims.gui.public_players"), panelX, y + 12, 0xAAAAAA);
                 int flagsY = y + 24 + 4 * 17 + 2;
                 g.drawString(font, Component.translatable("dioaddons_claims.gui.public_flags"), panelX, flagsY, 0xAAAAAA);
@@ -561,8 +653,12 @@ public final class ClaimsScreen extends Screen {
     private List<Optional<StatePayload.ClaimDetail>> claimEntries() {
         List<Optional<StatePayload.ClaimDetail>> list = new ArrayList<>();
         list.add(Optional.empty());
+        String filter = adminMode() ? filterDraft.trim().toLowerCase(java.util.Locale.ROOT) : "";
         for (StatePayload.ClaimDetail d : state.manageable()) {
-            list.add(Optional.of(d));
+            if (filter.isEmpty() || d.name().toLowerCase(java.util.Locale.ROOT).contains(filter)
+                    || d.ownerName().toLowerCase(java.util.Locale.ROOT).contains(filter)) {
+                list.add(Optional.of(d));
+            }
         }
         return list;
     }
@@ -582,18 +678,23 @@ public final class ClaimsScreen extends Screen {
             } else if (hover) {
                 g.fill(panelX, ry, panelX + PANEL_W, ry + ROW_H, 0x40FFFFFF);
             }
-            Component text;
             if (e.isEmpty()) {
-                text = Component.translatable("dioaddons_claims.gui.auto_claim").withStyle(ChatFormatting.ITALIC);
+                Component text = Component.translatable("dioaddons_claims.gui.auto_claim");
+                g.drawString(font, font.plainSubstrByWidth(text.getString(), PANEL_W - 4), panelX + 2, ry + 2, 0xAAAAAA);
             } else {
+                // Other players' claims (admin mode) start with their owner, in the admin colour.
                 StatePayload.ClaimDetail d = e.get();
                 String dim = d.dimension().substring(d.dimension().indexOf(':') + 1);
-                String owner = state.bypass() && !d.ownerName().equals(Minecraft.getInstance().getUser().getName())
-                        ? " [" + d.ownerName() + "]" : "";
-                text = Component.literal(d.name() + owner + " ")
-                        .append(Component.literal("(" + d.chunkCount() + ", " + dim + ")").withStyle(ChatFormatting.GRAY));
+                boolean others = othersClaim(d);
+                String main = (others ? d.ownerName() + ": " : "") + d.name() + " ";
+                String extra = "(" + d.chunkCount() + ", " + dim + ")";
+                String shown = font.plainSubstrByWidth(main, PANEL_W - 4);
+                g.drawString(font, shown, panelX + 2, ry + 2, others ? ADMIN_TEXT : 0xFFFFFF);
+                if (shown.length() == main.length()) {
+                    int x = panelX + 2 + font.width(main);
+                    g.drawString(font, font.plainSubstrByWidth(extra, panelX + PANEL_W - 2 - x), x, ry + 2, 0x888888);
+                }
             }
-            g.drawString(font, font.plainSubstrByWidth(text.getString(), PANEL_W - 4), panelX + 2, ry + 2, 0xFFFFFF);
         }
     }
 
@@ -626,7 +727,7 @@ public final class ClaimsScreen extends Screen {
     private void renderFooter(GuiGraphics g) {
         // Below the grid only, so the text never runs under the side panel.
         int width = panelX - 2 * MARGIN;
-        StatePayload.Feedback fb = state.feedback();
+        StatePayload.Feedback fb = Util.getMillis() < feedbackUntil ? feedback : null;
         if (fb != null) {
             Component msg = Component.translatable(fb.key(), fb.args().toArray());
             g.drawString(font, font.plainSubstrByWidth(msg.getString(), width), MARGIN, height - 34,
@@ -655,6 +756,9 @@ public final class ClaimsScreen extends Screen {
             StatePayload.GridClaim c = state.gridClaims().get(idx);
             lines.add(Component.literal(c.name()).withStyle(ChatFormatting.WHITE));
             lines.add(Component.translatable("dioaddons_claims.gui.owner", c.ownerName()).withStyle(ChatFormatting.GRAY));
+            if (c.relation() == StatePayload.ADMIN_EDITABLE) {
+                lines.add(Component.translatable("dioaddons_claims.gui.admin.editable").withStyle(ChatFormatting.GOLD));
+            }
         }
         g.renderTooltip(font, lines, Optional.empty(), mouseX, mouseY);
     }

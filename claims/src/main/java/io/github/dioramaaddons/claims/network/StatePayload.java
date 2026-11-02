@@ -13,11 +13,13 @@ import org.jetbrains.annotations.Nullable;
  *
  * @param cells     (2·radius+1)² entries, row by row from the north-west corner; each is an index into
  *                  {@code gridClaims} or -1 for unclaimed
- * @param manageable claims the player may edit: their own, plus visible claims of others while in admin bypass
+ * @param manageable claims the player may edit: their own, plus every claim on the server in admin mode
+ * @param admin      the player is an operator (may turn admin mode on)
+ * @param bypass     admin mode (protection bypass) is on
  */
 public record StatePayload(String dimension, int centerX, int centerZ, int radius, List<GridClaim> gridClaims,
         int[] cells, List<ClaimDetail> manageable, int usedChunks, int maxChunks, int usedClaims, int maxClaims,
-        boolean bypass, List<String> onlinePlayers, @Nullable Feedback feedback) implements CustomPacketPayload {
+        boolean admin, boolean bypass, List<String> onlinePlayers, @Nullable Feedback feedback) implements CustomPacketPayload {
 
     public static final byte OWN = 0;
     public static final byte MEMBER = 1;
@@ -28,7 +30,7 @@ public record StatePayload(String dimension, int centerX, int centerZ, int radiu
 
     public record Member(UUID id, String name, int mask) {}
 
-    public record ClaimDetail(UUID id, String name, String ownerName, String dimension, int chunkCount,
+    public record ClaimDetail(UUID id, String name, UUID ownerId, String ownerName, String dimension, int chunkCount,
             int publicMask, List<Member> members) {}
 
     /** Result of the last action, shown in the screen. */
@@ -53,6 +55,7 @@ public record StatePayload(String dimension, int centerX, int centerZ, int radiu
         buf.writeCollection(manageable, (b, c) -> {
             UUIDUtil.STREAM_CODEC.encode(b, c.id());
             b.writeUtf(c.name());
+            UUIDUtil.STREAM_CODEC.encode(b, c.ownerId());
             b.writeUtf(c.ownerName());
             b.writeUtf(c.dimension());
             b.writeVarInt(c.chunkCount());
@@ -67,6 +70,7 @@ public record StatePayload(String dimension, int centerX, int centerZ, int radiu
         buf.writeVarInt(maxChunks);
         buf.writeVarInt(usedClaims);
         buf.writeVarInt(maxClaims);
+        buf.writeBoolean(admin);
         buf.writeBoolean(bypass);
         buf.writeCollection(onlinePlayers, FriendlyByteBuf::writeUtf);
         buf.writeBoolean(feedback != null);
@@ -86,12 +90,13 @@ public record StatePayload(String dimension, int centerX, int centerZ, int radiu
                 b.readUtf(), b.readByte()));
         int[] cells = buf.readVarIntArray((2 * 129 + 1) * (2 * 129 + 1));
         List<ClaimDetail> manageable = buf.readList(b -> new ClaimDetail(UUIDUtil.STREAM_CODEC.decode(b),
-                b.readUtf(), b.readUtf(), b.readUtf(), b.readVarInt(), b.readVarInt(),
+                b.readUtf(), UUIDUtil.STREAM_CODEC.decode(b), b.readUtf(), b.readUtf(), b.readVarInt(), b.readVarInt(),
                 b.readList(b2 -> new Member(UUIDUtil.STREAM_CODEC.decode(b2), b2.readUtf(), b2.readVarInt()))));
         int usedChunks = buf.readVarInt();
         int maxChunks = buf.readVarInt();
         int usedClaims = buf.readVarInt();
         int maxClaims = buf.readVarInt();
+        boolean admin = buf.readBoolean();
         boolean bypass = buf.readBoolean();
         List<String> online = buf.readList(FriendlyByteBuf::readUtf);
         Feedback feedback = null;
@@ -99,7 +104,7 @@ public record StatePayload(String dimension, int centerX, int centerZ, int radiu
             feedback = new Feedback(buf.readBoolean(), buf.readUtf(), buf.readList(FriendlyByteBuf::readUtf));
         }
         return new StatePayload(dimension, cx, cz, radius, grid, cells, manageable, usedChunks, maxChunks,
-                usedClaims, maxClaims, bypass, online, feedback);
+                usedClaims, maxClaims, admin, bypass, online, feedback);
     }
 
     @Override

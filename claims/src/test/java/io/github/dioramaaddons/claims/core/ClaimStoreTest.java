@@ -152,4 +152,44 @@ class ClaimStoreTest {
         assertEquals(false, ClaimStore.isValidName("bad§c"));
         assertEquals(true, ClaimStore.isValidName("Casa de campo"));
     }
+
+    @Test
+    void onlyAdminsCanTransferAClaim() {
+        Claim alices = claim(alice, 0, 0, ClaimLimits.DEFAULT).claim();
+        assertEquals(ClaimResult.NOT_OWNER, store.transfer(alice, alices.id(), bob.id(), "Bob").result());
+        assertEquals(ClaimResult.NOT_OWNER, store.transfer(bob, alices.id(), bob.id(), "Bob").result());
+        assertEquals(ClaimResult.CLAIM_NOT_FOUND, store.transfer(admin, UUID.randomUUID(), bob.id(), "Bob").result());
+        assertEquals(ClaimResult.ALREADY_OWNER, store.transfer(admin, alices.id(), alice.id(), "Alice").result());
+    }
+
+    @Test
+    void transferChangesOwnerAndDropsTheNewOwnersMemberEntry() {
+        Claim claim = claim(alice, 0, 0, ClaimLimits.DEFAULT).claim();
+        store.setMember(alice, claim.id(), bob.id(), "Bob", EnumSet.of(Permission.BREAK_BLOCKS), ClaimLimits.DEFAULT);
+        List<ClaimStore.ChangeType> events = new ArrayList<>();
+        store.addListener((type, c) -> events.add(type));
+        assertEquals(ClaimResult.SUCCESS, store.transfer(admin, claim.id(), bob.id(), "Bob").result());
+        assertEquals(bob.id(), claim.owner());
+        assertEquals("Bob", claim.ownerName());
+        assertEquals(false, claim.isMember(bob.id()));
+        assertEquals(List.of(ClaimStore.ChangeType.UPDATED), events);
+        assertEquals(0, store.chunkCount(alice.id()));
+        assertEquals(1, store.chunkCount(bob.id()));
+        // The new owner manages it; the old one no longer does.
+        assertEquals(ClaimResult.SUCCESS, store.rename(bob, claim.id(), "Casa de Bob").result());
+        assertEquals(ClaimResult.NOT_OWNER, store.rename(alice, claim.id(), "Mía").result());
+    }
+
+    @Test
+    void adminCanEditAnyClaim() {
+        Claim claim = claim(alice, 0, 0, ClaimLimits.DEFAULT).claim();
+        assertEquals(ClaimResult.SUCCESS, store.rename(admin, claim.id(), "Revisado").result());
+        assertEquals(ClaimResult.SUCCESS, store.setPublicPermissions(admin, claim.id(), EnumSet.of(Permission.PVP)).result());
+        assertEquals(ClaimResult.SUCCESS, store.claimChunk(admin, DIM, c(1, 0), claim.id(), null, ClaimLimits.DEFAULT,
+                null).result());
+        assertEquals(alice.id(), claim.owner());
+        assertEquals(2, claim.chunks().size());
+        assertEquals(ClaimResult.SUCCESS, store.delete(admin, claim.id()).result());
+        assertNull(store.claimAt(DIM, c(0, 0)));
+    }
 }

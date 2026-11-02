@@ -268,6 +268,14 @@ public final class ClaimsService implements ClaimsApi {
         for (Claim c : store().claimsOf(me)) {
             manageable.put(c.id(), c);
         }
+        if (admin) {
+            // Admin mode: every claim on the server, other players' after the operator's own, by owner and name.
+            store().all().stream()
+                    .filter(c -> !c.isOwner(me))
+                    .sorted(java.util.Comparator.comparing((Claim c) -> c.ownerName().toLowerCase(java.util.Locale.ROOT))
+                            .thenComparing(c -> c.name().toLowerCase(java.util.Locale.ROOT)))
+                    .forEach(c -> manageable.put(c.id(), c));
+        }
         for (int row = 0; row < size; row++) {
             for (int col = 0; col < size; col++) {
                 long chunk = ChunkPos.asLong(center.x - radius + col, center.z - radius + row);
@@ -283,7 +291,6 @@ public final class ClaimsService implements ClaimsApi {
                         relation = StatePayload.OWN;
                     } else if (admin) {
                         relation = StatePayload.ADMIN_EDITABLE;
-                        manageable.put(c.id(), c);
                     } else if (c.isMember(me)) {
                         relation = StatePayload.MEMBER;
                     } else {
@@ -302,7 +309,7 @@ public final class ClaimsService implements ClaimsApi {
             for (ClaimMember m : c.members()) {
                 members.add(new StatePayload.Member(m.id(), m.name(), Permission.toMask(m.permissions())));
             }
-            details.add(new StatePayload.ClaimDetail(c.id(), c.name(), c.ownerName(), c.dimension(),
+            details.add(new StatePayload.ClaimDetail(c.id(), c.name(), c.owner(), c.ownerName(), c.dimension(),
                     c.chunks().size(), Permission.toMask(c.publicPermissions()), members));
         }
         List<String> online = new ArrayList<>();
@@ -314,7 +321,7 @@ public final class ClaimsService implements ClaimsApi {
         var limits = ClaimsConfig.limits();
         return new StatePayload(dim, center.x, center.z, radius, gridClaims, cells, details,
                 store().chunkCount(me), limits.maxChunksPerPlayer(), store().claimsOf(me).size(),
-                limits.maxClaimsPerPlayer(), admin, online, feedback);
+                limits.maxClaimsPerPlayer(), isAdmin(player), admin, online, feedback);
     }
 
     // ---------------------------------------------------------------- claims-api

@@ -100,7 +100,10 @@ public final class ClaimsCommands {
                                 .then(Commands.argument("player", GameProfileArgument.gameProfile())
                                         .executes(ClaimsCommands::adminListPlayer)))
                         .then(Commands.literal("delete").executes(ClaimsCommands::adminDelete))
-                        .then(Commands.literal("unclaim").executes(ClaimsCommands::adminUnclaim))));
+                        .then(Commands.literal("unclaim").executes(ClaimsCommands::adminUnclaim))
+                        .then(Commands.literal("transfer")
+                                .then(Commands.argument("player", GameProfileArgument.gameProfile())
+                                        .executes(ClaimsCommands::adminTransfer)))));
     }
 
     // ---------------------------------------------------------------- helpers
@@ -192,6 +195,11 @@ public final class ClaimsCommands {
         for (String line : List.of("claim", "unclaim", "menu", "list", "info", "rename", "delete", "trust", "untrust",
                 "permission_public", "permission_member", "permission_template")) {
             src.sendSuccess(() -> ServerLang.tr(src, "dioaddons_claims.help." + line), false);
+        }
+        if (src.hasPermission(ClaimsConfig.SERVER.adminPermissionLevel.get())) {
+            for (String line : List.of("admin_bypass", "admin_list", "admin_delete", "admin_unclaim", "admin_transfer")) {
+                src.sendSuccess(() -> ServerLang.tr(src, "dioaddons_claims.help." + line), false);
+            }
         }
         return 1;
     }
@@ -403,6 +411,19 @@ public final class ClaimsCommands {
         ClaimStore.Actor admin = new ClaimStore.Actor(player.getUUID(), player.getGameProfile().getName(), true);
         ClaimResult r = service().store().delete(admin, claim.id()).result();
         return result(ctx.getSource(), r, "dioaddons_claims.cmd.deleted", claim.name());
+    }
+
+    private static int adminTransfer(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        Claim claim = claimHere(player);
+        if (claim == null) {
+            return fail(ctx.getSource(), "dioaddons_claims.error.not_in_claim");
+        }
+        var profile = singleProfile(ctx);
+        ClaimStore.Actor admin = new ClaimStore.Actor(player.getUUID(), player.getGameProfile().getName(), true);
+        String name = claim.name();
+        ClaimResult r = service().store().transfer(admin, claim.id(), profile.getId(), profile.getName()).result();
+        return result(ctx.getSource(), r, "dioaddons_claims.admin.transferred", name, profile.getName());
     }
 
     private static int adminUnclaim(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
