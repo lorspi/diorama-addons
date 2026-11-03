@@ -19,17 +19,22 @@ import net.minecraft.nbt.Tag;
 import net.minecraft.world.level.saveddata.SavedData;
 
 /**
- * Everything clientmap keeps on the server, in {@code data/dioaddons_clientmap.dat}: groups, privacy choices,
- * shared waypoints by pool and explored chunks by pool and dimension. {@code format_version} allows migrations.
+ * Everything clientmap keeps on the server, in {@code data/dioaddons_clientmap.dat}: privacy choices, shared
+ * waypoints by pool and explored chunks by pool and dimension. {@code format_version} allows migrations: version 2
+ * adds the players' explored-map sharing choice and linked waypoints (shared from Diorama's waypoint screen).
  */
 public final class ClientMapData extends SavedData {
+    /** Kept from the former standalone mod, so existing worlds keep their data. */
     public static final String NAME = "dioaddons_clientmap";
-    public static final int FORMAT_VERSION = 1;
+    public static final int FORMAT_VERSION = 2;
     public static final SavedData.Factory<ClientMapData> FACTORY = new SavedData.Factory<>(ClientMapData::new, ClientMapData::load);
 
+    /** Map groups of {@code /mapgroup}. */
     final GroupRegistry groups = new GroupRegistry();
     /** Players' own choice to show (true) or hide (false) their position; absent = server default. */
     final Map<UUID, Boolean> visibility = new HashMap<>();
+    /** Players' own choice to share (true) or keep (false) what they explore; absent = shared. */
+    final Map<UUID, Boolean> exploredSharing = new HashMap<>();
     final Map<String, List<SharedWaypoint>> waypoints = new LinkedHashMap<>();
     final Map<String, Map<String, ExploredLog>> explored = new HashMap<>();
 
@@ -65,13 +70,17 @@ public final class ClientMapData extends SavedData {
         for (String key : vis.getAllKeys()) {
             d.visibility.put(UUID.fromString(key), vis.getBoolean(key));
         }
+        CompoundTag exs = tag.getCompound("explored_sharing");
+        for (String key : exs.getAllKeys()) {
+            d.exploredSharing.put(UUID.fromString(key), exs.getBoolean(key));
+        }
         CompoundTag wps = tag.getCompound("waypoints");
         for (String scope : wps.getAllKeys()) {
             List<SharedWaypoint> list = d.waypoints(scope);
             for (Tag t : wps.getList(scope, Tag.TAG_COMPOUND)) {
                 CompoundTag w = (CompoundTag) t;
                 list.add(new SharedWaypoint(w.getUUID("id"), w.getString("name"), w.getString("dimension"), w.getInt("x"),
-                        w.getInt("y"), w.getInt("z"), w.getInt("color"), w.getUUID("owner"), w.getString("owner_name")));
+                        w.getInt("y"), w.getInt("z"), w.getInt("color"), w.getUUID("owner"), w.getString("owner_name"), w.getBoolean("linked")));
             }
         }
         CompoundTag exp = tag.getCompound("explored");
@@ -110,6 +119,9 @@ public final class ClientMapData extends SavedData {
         CompoundTag vis = new CompoundTag();
         visibility.forEach((id, v) -> vis.putBoolean(id.toString(), v));
         tag.put("visibility", vis);
+        CompoundTag exs = new CompoundTag();
+        exploredSharing.forEach((id, v) -> exs.putBoolean(id.toString(), v));
+        tag.put("explored_sharing", exs);
         CompoundTag wps = new CompoundTag();
         waypoints.forEach((scope, list) -> {
             ListTag l = new ListTag();
@@ -124,6 +136,9 @@ public final class ClientMapData extends SavedData {
                 wt.putInt("color", w.color());
                 wt.putUUID("owner", w.owner());
                 wt.putString("owner_name", w.ownerName());
+                if (w.linked()) {
+                    wt.putBoolean("linked", true);
+                }
                 l.add(wt);
             }
             wps.put(scope, l);

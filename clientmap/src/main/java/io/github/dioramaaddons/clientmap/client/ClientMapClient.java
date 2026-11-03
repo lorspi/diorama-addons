@@ -14,6 +14,8 @@ import net.minecraft.commands.Commands;
 import net.minecraft.network.chat.Component;
 import net.minecraft.world.level.chunk.LevelChunk;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.fml.ModContainer;
+import net.neoforged.neoforge.client.gui.IConfigScreenFactory;
 import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
 import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RegisterClientCommandsEvent;
@@ -30,19 +32,23 @@ public final class ClientMapClient {
     private static final Logger LOGGER = LogUtils.getLogger();
     private static boolean active;
     private static @Nullable CmPayloads.Session session;
+    /** Pools already asked for in {@link #requestedDimension}. */
+    private static final java.util.Set<String> requested = new java.util.HashSet<>();
     private static @Nullable String requestedDimension;
     private static int chunksReceived;
 
     private ClientMapClient() {}
 
-    public static void init(IEventBus modBus) {
+    public static void init(IEventBus modBus, ModContainer container) {
+        // Mods list → Config opens the map settings (also without Diorama: the client settings are still kept).
+        container.registerExtensionPoint(IConfigScreenFactory.class, (c, parent) -> new MapSettingsScreen(parent));
         active = DioramaCompat.active();
         if (!active) {
             if (DioramaCompat.installed()) {
-                LOGGER.warn("Diorama {} is not a version Diorama Addons: Client Map supports ({}); the map integration is off",
+                LOGGER.warn("Diorama {} is not a version the map module supports ({}); the map integration is off",
                         DioramaCompat.installedVersion(), DioramaCompat.SUPPORTED);
             } else {
-                LOGGER.info("Diorama is not installed; Diorama Addons: Client Map has nothing to do on this client");
+                LOGGER.info("Diorama is not installed; the map module has nothing to do on this client");
             }
             return;
         }
@@ -52,17 +58,24 @@ public final class ClientMapClient {
         NeoForge.EVENT_BUS.addListener((RegisterClientCommandsEvent e) -> e.getDispatcher().register(Commands.literal("clientmap")
                 .then(Commands.literal("resync").executes(ctx -> {
                     SyncProgress.reset(serverKey());
-                    requestedDimension = null;
+                    requested.clear();
                     ctx.getSource().sendSystemMessage(Component.translatable("dioaddons_clientmap.client.resync"));
+                    return Command.SINGLE_SUCCESS;
+                }))
+                .then(Commands.literal("settings").executes(ctx -> {
+                    // The chat screen closes after the command runs; open on the next tick.
+                    Minecraft mc = Minecraft.getInstance();
+                    mc.tell(() -> mc.setScreen(new MapSettingsScreen(null)));
                     return Command.SINGLE_SUCCESS;
                 }))
                 .then(Commands.literal("status").executes(ctx -> {
                     ctx.getSource().sendSystemMessage(Component.translatable("dioaddons_clientmap.client.status",
-                            session == null ? "-" : session.exploredMode().name(), session == null ? "-" : session.locationsMode().name(),
+                            session == null ? "-" : session.exploredMode().name() + " " + session.exploredScopes().size(),
+                            session == null ? "-" : session.locationsMode().name(),
                             chunksReceived));
                     return Command.SINGLE_SUCCESS;
                 }))));
-        LOGGER.info("Diorama {} found: Diorama Addons: Client Map integration on", DioramaCompat.installedVersion());
+        LOGGER.info("Diorama {} found: map integration on", DioramaCompat.installedVersion());
     }
 
     public static @Nullable CmPayloads.Session session() {
@@ -73,6 +86,7 @@ public final class ClientMapClient {
         DioramaBridge.clear();
         session = null;
         requestedDimension = null;
+        requested.clear();
         var connection = Minecraft.getInstance().getConnection();
         if (connection != null && connection.hasChannel(CmPayloads.Hello.TYPE)) {
             PacketDistributor.sendToServer(new CmPayloads.Hello(ClientMapNetwork.PROTOCOL));
@@ -83,6 +97,7 @@ public final class ClientMapClient {
         DioramaBridge.clear();
         session = null;
         requestedDimension = null;
+        requested.clear();
         SyncProgress.save();
     }
 
@@ -102,10 +117,17 @@ public final class ClientMapClient {
             return;
         }
         String dim = mc.level.dimension().location().toString();
-        if (session.exploredMode() != ShareMode.DISABLED && !session.exploredScope().isEmpty() && !dim.equals(requestedDimension)) {
+        if (!dim.equals(requestedDimension)) {
             requestedDimension = dim;
-            int from = SyncProgress.get(SyncProgress.key(serverKey(), dim, session.exploredScope()));
-            PacketDistributor.sendToServer(new CmPayloads.ExploredRequest(dim, session.exploredScope(), from));
+            requested.clear();
+        }
+        if (session.exploredMode() != ShareMode.DISABLED) {
+            for (String scope : session.exploredScopes()) {
+                if (requested.add(scope)) {
+                    int from = SyncProgress.get(SyncProgress.key(serverKey(), dim, scope));
+                    PacketDistributor.sendToServer(new CmPayloads.ExploredRequest(dim, scope, from));
+                }
+            }
         }
         if (mc.level.getGameTime() % 200 == 0) {
             SyncProgress.save();
@@ -118,12 +140,10 @@ public final class ClientMapClient {
         if (!active) {
             return;
         }
-        boolean scopeChanged = session == null || !session.exploredScope().equals(s.exploredScope());
         session = s;
         DioramaBridge.setClaimsEnabled(s.claims());
-        if (scopeChanged) {
-            requestedDimension = null;
-        }
+        // Pools no longer ours are asked for again if they come back.
+        requested.retainAll(s.exploredScopes());
     }
 
     public static void onClaims(CmPayloads.Claims p) {
@@ -148,7 +168,7 @@ public final class ClientMapClient {
         Minecraft mc = Minecraft.getInstance();
         ClientLevel level = mc.level;
         if (!active || level == null || session == null || !level.dimension().location().toString().equals(p.dimension())
-                || !session.exploredScope().equals(p.scope())) {
+                || !session.exploredScopes().contains(p.scope())) {
             return;
         }
         for (CmPayloads.ChunkEntry entry : p.chunks()) {

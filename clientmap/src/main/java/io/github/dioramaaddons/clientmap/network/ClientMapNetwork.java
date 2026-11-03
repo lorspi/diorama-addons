@@ -8,7 +8,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
 
 /** All payloads are optional: vanilla clients and clients without clientmap can join. */
 public final class ClientMapNetwork {
-    public static final int PROTOCOL = 1;
+    public static final int PROTOCOL = 2;
 
     private ClientMapNetwork() {}
 
@@ -30,12 +30,21 @@ public final class ClientMapNetwork {
                 s.onExploredRequest(player(ctx), p);
             }
         });
-        r.playToServer(CmPayloads.AddWaypoint.TYPE, CmPayloads.AddWaypoint.CODEC, (p, ctx) -> {
+        r.playToServer(CmPayloads.ShareWaypoint.TYPE, CmPayloads.ShareWaypoint.CODEC, (p, ctx) -> {
             ClientMapServer s = ClientMapServer.get();
             ServerPlayer player = player(ctx);
             if (s != null && player != null) {
-                ClientMapServer.WaypointResult res = s.addWaypoint(player, p.name(), p.dimension(), p.x(), p.y(), p.z(), p.color());
-                feedback(player, res, "dioaddons_clientmap.waypoint.added", p.name());
+                ClientMapServer.WaypointResult res = s.shareWaypoint(player, p);
+                if (res != ClientMapServer.WaypointResult.SUCCESS) {
+                    feedback(player, res, "", "");
+                }
+            }
+        });
+        r.playToServer(CmPayloads.Preferences.TYPE, CmPayloads.Preferences.CODEC, (p, ctx) -> {
+            ClientMapServer s = ClientMapServer.get();
+            ServerPlayer player = player(ctx);
+            if (s != null && player != null) {
+                s.setPreferences(player, p.visible(), p.shareExplored());
             }
         });
         r.playToServer(CmPayloads.DeleteWaypoint.TYPE, CmPayloads.DeleteWaypoint.CODEC, (p, ctx) -> {

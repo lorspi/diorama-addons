@@ -4,7 +4,12 @@ import dev.diorama.Claims;
 import dev.diorama.MapSession;
 import dev.diorama.data.ChunkSnapshot;
 import dev.diorama.render.MapLevel;
+import dev.diorama.Settings;
 import dev.diorama.waypoint.Waypoint;
+import io.github.dioramaaddons.clientmap.client.ClientMapClient;
+import io.github.dioramaaddons.clientmap.core.Scopes;
+import io.github.dioramaaddons.clientmap.core.ShareMode;
+import io.github.dioramaaddons.clientmap.config.ClientMapClientConfig;
 import io.github.dioramaaddons.clientmap.compat.diorama.mixin.TrackedPlayersInvoker;
 import io.github.dioramaaddons.clientmap.network.CmPayloads;
 import io.github.dioramaaddons.claimsapi.ChunkCoord;
@@ -17,6 +22,8 @@ import java.util.Set;
 import java.util.UUID;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.multiplayer.ClientLevel;
+import net.minecraft.network.chat.Component;
+import net.neoforged.neoforge.network.PacketDistributor;
 import net.minecraft.core.UUIDUtil;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.nbt.CompoundTag;
@@ -41,6 +48,11 @@ public final class DioramaBridge {
     private static Map<UUID, CmPayloads.WaypointEntry> waypoints = Map.of();
     private static List<Waypoint> waypointObjects = List.of();
 
+    /** Pools the player's own Diorama waypoints are shared in, by waypoint id (from the server). */
+    private static Map<UUID, String> myShares = Map.of();
+    /** What was last sent for each shared waypoint, so unchanged ones are not sent again. */
+    private static final Map<UUID, String> lastSent = new HashMap<>();
+
     private static Set<UUID> trackedPlayers = Set.of();
 
     private DioramaBridge() {}
@@ -51,7 +63,21 @@ public final class DioramaBridge {
         claimsEnabled = false;
         waypoints = Map.of();
         waypointObjects = List.of();
+        myShares = Map.of();
+        lastSent.clear();
         trackedPlayers = Set.of();
+    }
+
+    // ---------------------------------------------------------------- claims shown (personal settings)
+
+    /** Diorama's claims setting, narrowed by the player's own map settings for the full map. */
+    public static Settings.ClaimsShown claimsOnMap(Settings.ClaimsShown diorama) {
+        return ClientMapClientConfig.flag(ClientMapClientConfig.CLAIMS_ON_MAP) ? diorama : Settings.ClaimsShown.OFF;
+    }
+
+    /** Same for the minimap. */
+    public static Settings.ClaimsShown claimsOnMinimap(Settings.ClaimsShown diorama) {
+        return ClientMapClientConfig.flag(ClientMapClientConfig.CLAIMS_ON_MINIMAP) ? diorama : Settings.ClaimsShown.OFF;
     }
 
     // ---------------------------------------------------------------- claims
@@ -136,6 +162,113 @@ public final class DioramaBridge {
         }
         waypoints = map;
         waypointObjects = List.copyOf(objects);
+        Map<UUID, String> mine = new HashMap<>();
+        for (CmPayloads.MyShare m : payload.mine()) {
+            mine.put(m.id(), m.scope());
+        }
+        myShares = mine;
+        lastSent.keySet().retainAll(mine.keySet());
+    }
+
+    // ---------------------------------------------------------------- sharing own waypoints
+
+    /** Whether the player can share this waypoint from its edit screen. */
+    public static boolean canShare(Waypoint w) {
+        CmPayloads.Session session = ClientMapClient.session();
+        Minecraft mc = Minecraft.getInstance();
+        return w != null && w.editable() && w.id != null && session != null
+                && session.locationsMode() != ShareMode.DISABLED && mc.getConnection() != null
+                && mc.getConnection().hasChannel(CmPayloads.ShareWaypoint.TYPE);
+    }
+
+    /** The pool a waypoint of the player is shared in: {@code ""} (private), {@code global} or {@code group:<id>}. */
+    public static String shareOf(UUID id) {
+        return id == null ? "" : myShares.getOrDefault(id, "");
+    }
+
+    /** The choices of the share button, in order: private, public, then each of the player's map groups. */
+    public static List<String> shareChoices() {
+        List<String> out = new ArrayList<>();
+        out.add("");
+        out.add(Scopes.GLOBAL);
+        for (CmPayloads.GroupRef g : groups()) {
+            out.add(Scopes.group(g.id()));
+        }
+        return out;
+    }
+
+    public static Component shareLabel(String scope) {
+        if (scope == null || scope.isEmpty()) {
+            return Component.translatable("dioaddons_clientmap.share.private");
+        }
+        if (scope.equals(Scopes.GLOBAL)) {
+            return Component.translatable("dioaddons_clientmap.share.public");
+        }
+        for (CmPayloads.GroupRef g : groups()) {
+            if (scope.equals(Scopes.group(g.id()))) {
+                return Component.translatable("dioaddons_clientmap.share.group", g.name());
+            }
+        }
+        return Component.translatable("dioaddons_clientmap.share.group", "?");
+    }
+
+    private static List<CmPayloads.GroupRef> groups() {
+        CmPayloads.Session session = ClientMapClient.session();
+        return session == null ? List.of() : session.groups();
+    }
+
+    private static String signature(Waypoint w, String scope) {
+        return scope + "|" + w.name + "|" + w.dimension + "|" + w.x + "|" + w.y + "|" + w.z + "|" + (w.color & 0xFFFFFF);
+    }
+
+    private static void send(Waypoint w, String scope) {
+        lastSent.put(w.id, signature(w, scope));
+        PacketDistributor.sendToServer(new CmPayloads.ShareWaypoint(w.id, scope, w.name == null ? "" : w.name,
+                w.dimension == null ? "" : w.dimension, w.x, w.y, w.z, w.color & 0xFFFFFF));
+    }
+
+    /** The edit screen saved a waypoint with this share choice. */
+    public static void applyShare(Waypoint w, String scope) {
+        if (!canShare(w)) {
+            return;
+        }
+        String now = shareOf(w.id);
+        if (scope.isEmpty() && now.isEmpty()) {
+            return;
+        }
+        if (!scope.equals(now) || !signature(w, scope).equals(lastSent.get(w.id))) {
+            Map<UUID, String> copy = new HashMap<>(myShares);
+            if (scope.isEmpty()) {
+                copy.remove(w.id);
+            } else {
+                copy.put(w.id, scope);
+            }
+            myShares = copy;
+            send(w, scope);
+        }
+    }
+
+    /** Diorama saved its waypoints: shared ones that changed (renamed, moved, recoloured) are sent again. */
+    public static void syncMine(List<Waypoint> local) {
+        if (myShares.isEmpty() || Minecraft.getInstance().getConnection() == null) {
+            return;
+        }
+        for (Waypoint w : local) {
+            String scope = w.id == null ? null : myShares.get(w.id);
+            if (scope != null && !signature(w, scope).equals(lastSent.get(w.id))) {
+                send(w, scope);
+            }
+        }
+    }
+
+    /** A waypoint is being deleted in Diorama: if it was shared, it stops being shared. */
+    public static void onRemoved(Waypoint w) {
+        if (w != null && w.id != null && myShares.containsKey(w.id) && Minecraft.getInstance().getConnection() != null) {
+            Map<UUID, String> copy = new HashMap<>(myShares);
+            copy.remove(w.id);
+            myShares = copy;
+            send(w, "");
+        }
     }
 
     public static List<Waypoint> waypointsIn(String dimension) {

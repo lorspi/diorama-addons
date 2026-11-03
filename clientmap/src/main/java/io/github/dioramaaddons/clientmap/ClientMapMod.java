@@ -1,6 +1,7 @@
 package io.github.dioramaaddons.clientmap;
 
 import com.mojang.logging.LogUtils;
+import io.github.dioramaaddons.clientmap.config.ClientMapClientConfig;
 import io.github.dioramaaddons.clientmap.config.ClientMapConfig;
 import io.github.dioramaaddons.clientmap.network.ClientMapNetwork;
 import io.github.dioramaaddons.clientmap.server.ClientMapCommands;
@@ -30,6 +31,7 @@ public final class ClientMapMod {
 
     public ClientMapMod(IEventBus modEventBus, ModContainer container) {
         container.registerConfig(ModConfig.Type.COMMON, ClientMapConfig.SPEC);
+        container.registerConfig(ModConfig.Type.CLIENT, ClientMapClientConfig.SPEC);
         modEventBus.addListener(ClientMapNetwork::register);
         IEventBus bus = NeoForge.EVENT_BUS;
         bus.addListener(ClientMapCommands::register);
@@ -60,7 +62,7 @@ public final class ClientMapMod {
             }
         });
         if (FMLEnvironment.dist.isClient()) {
-            io.github.dioramaaddons.clientmap.client.ClientMapClient.init(modEventBus);
+            io.github.dioramaaddons.clientmap.client.ClientMapClient.init(modEventBus, container);
         }
         LOGGER.info("Diorama Addons: Client Map {} loaded", container.getModInfo().getVersion());
     }

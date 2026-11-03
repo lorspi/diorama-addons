@@ -6,10 +6,13 @@
   "minVersion": "0.8",
   "client": [
     "FtbChunksMixin",
+    "MapScreenClaimsMixin",
     "MapScreenMixin",
     "MapScreenSpotV06Mixin",
     "MapScreenSpotV07Mixin",
+    "MinimapHudClaimsMixin",
     "TrackedPlayersInvoker",
+    "WaypointEditScreenMixin",
     "WaypointStoreMixin"
   ],
   "injectors": {

@@ -18,7 +18,10 @@ import net.minecraft.commands.arguments.GameProfileArgument;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.event.RegisterCommandsEvent;
 
-/** {@code /mapgroup}, {@code /sharedwaypoint} and {@code /maplocation}. Work without any client mod. */
+/**
+ * {@code /mapgroup}, {@code /sharedwaypoint}, {@code /maplocation} and {@code /mapexplored}. Work without any client
+ * mod. Waypoints are shared from Diorama's waypoint screen; the command lists and removes them.
+ */
 public final class ClientMapCommands {
     private ClientMapCommands() {}
 
@@ -41,22 +44,21 @@ public final class ClientMapCommands {
                 .executes(ClientMapCommands::info));
 
         d.register(Commands.literal("sharedwaypoint")
-                .then(Commands.literal("add").then(Commands.argument("name", StringArgumentType.greedyString())
-                        .executes(ClientMapCommands::addWaypoint)))
                 .then(Commands.literal("list").executes(ClientMapCommands::listWaypoints))
                 .then(Commands.literal("remove").then(Commands.argument("name", StringArgumentType.greedyString())
                         .suggests(ClientMapCommands::suggestWaypoints)
                         .executes(ClientMapCommands::removeWaypoint)))
-                .then(Commands.literal("rename")
-                        .then(Commands.argument("old", StringArgumentType.string()).suggests(ClientMapCommands::suggestWaypoints)
-                                .then(Commands.argument("name", StringArgumentType.greedyString())
-                                        .executes(ClientMapCommands::renameWaypoint))))
                 .executes(ClientMapCommands::listWaypoints));
 
         d.register(Commands.literal("maplocation")
                 .then(Commands.literal("show").executes(ctx -> visibility(ctx, true)))
                 .then(Commands.literal("hide").executes(ctx -> visibility(ctx, false)))
                 .executes(ClientMapCommands::locationStatus));
+
+        d.register(Commands.literal("mapexplored")
+                .then(Commands.literal("share").executes(ctx -> exploredSharing(ctx, true)))
+                .then(Commands.literal("keep").executes(ctx -> exploredSharing(ctx, false)))
+                .executes(ClientMapCommands::exploredStatus));
     }
 
     private static ClientMapServer service() {
@@ -75,23 +77,14 @@ public final class ClientMapCommands {
             throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
         ClientMapServer s = service();
-        UUID oldGroup = s.groups().groupIdOf(player.getUUID());
-        List<UUID> before = oldGroup == null ? List.of(player.getUUID())
-                : List.copyOf(s.groups().groupOf(player.getUUID()).get().members().keySet());
         GroupRegistry.Result r = action.run(s, player);
         if (r != GroupRegistry.Result.SUCCESS) {
             ctx.getSource().sendFailure(ServerLang.tr(ctx.getSource(), r.translationKey()));
             return 0;
         }
-        UUID newGroup = s.groups().groupIdOf(player.getUUID());
-        if (newGroup != null && oldGroup == null) {
-            s.mergeIntoGroup(player.getUUID(), newGroup);
-        }
         s.data().setDirty();
-        s.refreshPlayers(before);
-        if (newGroup != null) {
-            s.refreshPlayers(s.groups().groupOf(player.getUUID()).get().members().keySet());
-        }
+        // Pools, waypoints shared into a group left and the share button's groups follow the change.
+        s.onGroupsChanged(player);
         String name = s.groups().groupOf(player.getUUID()).map(MapGroup::name).orElse("");
         ctx.getSource().sendSuccess(() -> ServerLang.tr(ctx.getSource(), successKey, name), false);
         return 1;
@@ -136,8 +129,7 @@ public final class ClientMapCommands {
             return 0;
         }
         s.data().setDirty();
-        s.refreshPlayers(List.of(target.getId()));
-        s.refreshPlayers(s.groups().groupOf(player.getUUID()).get().members().keySet());
+        s.onGroupsChanged(target.getId());
         ctx.getSource().sendSuccess(() -> ServerLang.tr(ctx.getSource(), "dioaddons_clientmap.group.kicked", target.getName()), false);
         return 1;
     }
@@ -153,14 +145,6 @@ public final class ClientMapCommands {
                         String.join(", ", g.members().values()), g.members().getOrDefault(g.owner(), "?")), false),
                 () -> src.sendSuccess(() -> ServerLang.tr(src, "dioaddons_clientmap.info.no_group"), false));
         return 1;
-    }
-
-    private static int addWaypoint(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
-        ServerPlayer player = ctx.getSource().getPlayerOrException();
-        String name = StringArgumentType.getString(ctx, "name");
-        ClientMapServer.WaypointResult r = service().addWaypoint(player, name, ClientMapServer.dim(player.serverLevel()),
-                player.getBlockX(), player.getBlockY(), player.getBlockZ(), 0xFF2F80ED);
-        return waypointResult(ctx, r, "dioaddons_clientmap.waypoint.added", name.trim());
     }
 
     private static int waypointResult(CommandContext<CommandSourceStack> ctx, ClientMapServer.WaypointResult r, String key,
@@ -199,22 +183,11 @@ public final class ClientMapCommands {
     private static int removeWaypoint(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
         ServerPlayer player = ctx.getSource().getPlayerOrException();
         String name = StringArgumentType.getString(ctx, "name").replace("\"", "").trim();
-        SharedWaypoint w = service().find(player, name);
+        SharedWaypoint w = service().find(player.getUUID(), name);
         if (w == null) {
             return waypointResult(ctx, ClientMapServer.WaypointResult.NOT_FOUND, "");
         }
         return waypointResult(ctx, service().deleteWaypoint(player, w.id()), "dioaddons_clientmap.waypoint.removed", w.name());
-    }
-
-    private static int renameWaypoint(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
-        ServerPlayer player = ctx.getSource().getPlayerOrException();
-        SharedWaypoint w = service().find(player, StringArgumentType.getString(ctx, "old"));
-        if (w == null) {
-            return waypointResult(ctx, ClientMapServer.WaypointResult.NOT_FOUND, "");
-        }
-        String name = StringArgumentType.getString(ctx, "name");
-        return waypointResult(ctx, service().renameWaypoint(player, w.id(), name), "dioaddons_clientmap.waypoint.renamed",
-                w.name(), name.trim());
     }
 
     private static int visibility(CommandContext<CommandSourceStack> ctx, boolean visible) throws CommandSyntaxException {
@@ -228,6 +201,18 @@ public final class ClientMapCommands {
         boolean visible = service().isVisible(ctx.getSource().getPlayerOrException().getUUID());
         ctx.getSource().sendSuccess(() -> ServerLang.tr(ctx.getSource(),
                 visible ? "dioaddons_clientmap.location.shown" : "dioaddons_clientmap.location.hidden"), false);
+        return 1;
+    }
+
+    private static int exploredSharing(CommandContext<CommandSourceStack> ctx, boolean share) throws CommandSyntaxException {
+        service().setSharesExplored(ctx.getSource().getPlayerOrException(), share);
+        return exploredStatus(ctx);
+    }
+
+    private static int exploredStatus(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        boolean share = service().sharesExplored(ctx.getSource().getPlayerOrException().getUUID());
+        ctx.getSource().sendSuccess(() -> ServerLang.tr(ctx.getSource(),
+                share ? "dioaddons_clientmap.explored.shared" : "dioaddons_clientmap.explored.kept"), false);
         return 1;
     }
 }

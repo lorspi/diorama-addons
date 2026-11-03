@@ -16,7 +16,7 @@ public final class CmPayloads {
     private CmPayloads() {}
 
     static <T extends CustomPacketPayload> CustomPacketPayload.Type<T> typeOf(String path) {
-        return new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(ClientMapMod.MOD_ID, path));
+        return new CustomPacketPayload.Type<>(ResourceLocation.fromNamespaceAndPath(ClientMapMod.MOD_ID, "clientmap/" + path));
     }
 
     private static UUID uuid(FriendlyByteBuf b) {
@@ -58,10 +58,17 @@ public final class CmPayloads {
         }
     }
 
-    public record AddWaypoint(String name, String dimension, int x, int y, int z, int color) implements CustomPacketPayload {
-        public static final Type<AddWaypoint> TYPE = typeOf("add_waypoint");
-        public static final StreamCodec<FriendlyByteBuf, AddWaypoint> CODEC = StreamCodec.ofMember(
+    /**
+     * Shares one of the player's own Diorama waypoints (same id) into {@code scope}: {@code global} (public),
+     * {@code group:<id>}, or empty to stop sharing it. Sent again with the new data when the waypoint changes.
+     */
+    public record ShareWaypoint(UUID id, String scope, String name, String dimension, int x, int y, int z, int color)
+            implements CustomPacketPayload {
+        public static final Type<ShareWaypoint> TYPE = typeOf("share_waypoint");
+        public static final StreamCodec<FriendlyByteBuf, ShareWaypoint> CODEC = StreamCodec.ofMember(
                 (p, b) -> {
+                    uuid(b, p.id);
+                    b.writeUtf(p.scope, 64);
                     b.writeUtf(p.name, 64);
                     b.writeUtf(p.dimension, 256);
                     b.writeVarInt(p.x);
@@ -69,10 +76,11 @@ public final class CmPayloads {
                     b.writeVarInt(p.z);
                     b.writeInt(p.color);
                 },
-                b -> new AddWaypoint(b.readUtf(64), b.readUtf(256), b.readVarInt(), b.readVarInt(), b.readVarInt(), b.readInt()));
+                b -> new ShareWaypoint(uuid(b), b.readUtf(64), b.readUtf(64), b.readUtf(256), b.readVarInt(), b.readVarInt(),
+                        b.readVarInt(), b.readInt()));
 
         @Override
-        public Type<AddWaypoint> type() {
+        public Type<ShareWaypoint> type() {
             return TYPE;
         }
     }
@@ -88,28 +96,55 @@ public final class CmPayloads {
         }
     }
 
+    /** The player's own sharing choices, from the map settings screen: show my location, share what I explore. */
+    public record Preferences(boolean visible, boolean shareExplored) implements CustomPacketPayload {
+        public static final Type<Preferences> TYPE = typeOf("preferences");
+        public static final StreamCodec<FriendlyByteBuf, Preferences> CODEC = StreamCodec.ofMember(
+                (p, b) -> {
+                    b.writeBoolean(p.visible);
+                    b.writeBoolean(p.shareExplored);
+                },
+                b -> new Preferences(b.readBoolean(), b.readBoolean()));
+
+        @Override
+        public Type<Preferences> type() {
+            return TYPE;
+        }
+    }
+
     // ------------------------------------------------------------ server → client
 
-    /** Sharing settings and the player's pools. Sent after {@link Hello} and when they change. */
-    public record Session(ShareMode exploredMode, String exploredScope, ShareMode locationsMode, boolean visible,
-            boolean claims) implements CustomPacketPayload {
+    /**
+     * Sharing settings and the player's pools. Sent after {@link Hello} and when they change. {@code exploredScopes}
+     * are the pools whose explored map the player receives.
+     */
+    public record Session(ShareMode exploredMode, List<String> exploredScopes, ShareMode locationsMode, boolean visible,
+            boolean shareExplored, boolean claims, List<GroupRef> groups) implements CustomPacketPayload {
         public static final Type<Session> TYPE = typeOf("session");
         public static final StreamCodec<FriendlyByteBuf, Session> CODEC = StreamCodec.ofMember(
                 (p, b) -> {
                     b.writeEnum(p.exploredMode);
-                    b.writeUtf(p.exploredScope, 64);
+                    b.writeCollection(p.exploredScopes, (b2, sc) -> b2.writeUtf(sc, 64));
                     b.writeEnum(p.locationsMode);
                     b.writeBoolean(p.visible);
+                    b.writeBoolean(p.shareExplored);
                     b.writeBoolean(p.claims);
+                    b.writeCollection(p.groups, (b2, g) -> {
+                        uuid(b2, g.id());
+                        b2.writeUtf(g.name(), 64);
+                    });
                 },
-                b -> new Session(b.readEnum(ShareMode.class), b.readUtf(64), b.readEnum(ShareMode.class), b.readBoolean(),
-                        b.readBoolean()));
+                b -> new Session(b.readEnum(ShareMode.class), b.readList(b2 -> b2.readUtf(64)), b.readEnum(ShareMode.class),
+                        b.readBoolean(), b.readBoolean(), b.readBoolean(), b.readList(b2 -> new GroupRef(uuid(b2), b2.readUtf(64)))));
 
         @Override
         public Type<Session> type() {
             return TYPE;
         }
     }
+
+    /** A map group the player is in, for the waypoint share button. */
+    public record GroupRef(UUID id, String name) {}
 
     public record ClaimEntry(UUID id, String name, UUID owner, String ownerName, String dimension, int rgb, long[] chunks) {}
 
@@ -144,23 +179,37 @@ public final class CmPayloads {
     public record WaypointEntry(UUID id, String name, String dimension, int x, int y, int z, int color, String ownerName,
             boolean canModify) {}
 
-    /** Every shared waypoint the player sees. Replaces the previous list. */
-    public record Waypoints(List<WaypointEntry> waypoints) implements CustomPacketPayload {
+    /** One of the player's own waypoints shared from Diorama, and where to. */
+    public record MyShare(UUID id, String scope) {}
+
+    /**
+     * Every shared waypoint the player sees (not their own linked ones), and the pools their own waypoints are shared
+     * in. Replaces the previous lists.
+     */
+    public record Waypoints(List<WaypointEntry> waypoints, List<MyShare> mine) implements CustomPacketPayload {
         public static final Type<Waypoints> TYPE = typeOf("waypoints");
         public static final StreamCodec<FriendlyByteBuf, Waypoints> CODEC = StreamCodec.ofMember(
-                (p, b) -> b.writeCollection(p.waypoints, (b2, w) -> {
-                    uuid(b2, w.id());
-                    b2.writeUtf(w.name());
-                    b2.writeUtf(w.dimension());
-                    b2.writeVarInt(w.x());
-                    b2.writeVarInt(w.y());
-                    b2.writeVarInt(w.z());
-                    b2.writeInt(w.color());
-                    b2.writeUtf(w.ownerName());
-                    b2.writeBoolean(w.canModify());
-                }),
-                b -> new Waypoints(b.readList(b2 -> new WaypointEntry(uuid(b2), b2.readUtf(), b2.readUtf(), b2.readVarInt(),
-                        b2.readVarInt(), b2.readVarInt(), b2.readInt(), b2.readUtf(), b2.readBoolean()))));
+                (p, b) -> {
+                    b.writeCollection(p.waypoints, (b2, w) -> {
+                        uuid(b2, w.id());
+                        b2.writeUtf(w.name());
+                        b2.writeUtf(w.dimension());
+                        b2.writeVarInt(w.x());
+                        b2.writeVarInt(w.y());
+                        b2.writeVarInt(w.z());
+                        b2.writeInt(w.color());
+                        b2.writeUtf(w.ownerName());
+                        b2.writeBoolean(w.canModify());
+                    });
+                    b.writeCollection(p.mine, (b2, m) -> {
+                        uuid(b2, m.id());
+                        b2.writeUtf(m.scope(), 64);
+                    });
+                },
+                b -> new Waypoints(
+                        b.readList(b2 -> new WaypointEntry(uuid(b2), b2.readUtf(), b2.readUtf(), b2.readVarInt(),
+                                b2.readVarInt(), b2.readVarInt(), b2.readInt(), b2.readUtf(), b2.readBoolean())),
+                        b.readList(b2 -> new MyShare(uuid(b2), b2.readUtf(64)))));
 
         @Override
         public Type<Waypoints> type() {

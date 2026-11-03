@@ -4,9 +4,8 @@ import com.mojang.logging.LogUtils;
 import com.mojang.serialization.Codec;
 import io.github.dioramaaddons.clientmap.config.ClientMapConfig;
 import io.github.dioramaaddons.clientmap.core.ExploredLog;
-import io.github.dioramaaddons.clientmap.core.GroupRegistry;
-import io.github.dioramaaddons.clientmap.core.MapGroup;
 import io.github.dioramaaddons.clientmap.core.Scopes;
+import io.github.dioramaaddons.clientmap.core.Sharing;
 import io.github.dioramaaddons.clientmap.core.ShareMode;
 import io.github.dioramaaddons.clientmap.core.SharedWaypoint;
 import io.github.dioramaaddons.clientmap.network.CmPayloads;
@@ -14,12 +13,18 @@ import io.github.dioramaaddons.claimsapi.ClaimChangeListener;
 import io.github.dioramaaddons.claimsapi.ClaimInfo;
 import io.github.dioramaaddons.claimsapi.ClaimsApi;
 import io.github.dioramaaddons.claimsapi.ClaimsApiProvider;
+import io.github.dioramaaddons.clientmap.core.GroupRegistry;
+import io.github.dioramaaddons.clientmap.core.MapGroup;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import net.minecraft.core.Holder;
@@ -52,7 +57,9 @@ import org.slf4j.Logger;
 /**
  * Server side of clientmap. Players opt in with {@link CmPayloads.Hello} (sent only by clients with a
  * supported map mod); nothing is sent to anyone else, so vanilla clients and clients without Diorama are
- * unaffected. Server thread only, except where noted.
+ * unaffected. Groups are the map groups of {@code /mapgroup} ({@link GroupRegistry}); the sharing rules
+ * ({@link Sharing}) accept several groups per player, the registry gives at most one.
+ * Server thread only, except where noted.
  */
 public final class ClientMapServer {
     private static final Logger LOGGER = LogUtils.getLogger();
@@ -73,11 +80,12 @@ public final class ClientMapServer {
 
     /** Per connected player that sent Hello. */
     private static final class Client {
-        @Nullable Stream stream;
+        /** Explored chunks being sent, by pool. */
+        final Map<String, Stream> streams = new HashMap<>();
         String waypointsHash = "";
     }
 
-    /** Explored chunks being sent to one player. */
+    /** Explored chunks of one pool being sent to one player. */
     private static final class Stream {
         final String dimension;
         final String scope;
@@ -138,16 +146,48 @@ public final class ClientMapServer {
         return locationsMode;
     }
 
+    private boolean showClaims() {
+        return claimsApi != null;
+    }
+
+    private CmPayloads.Claims allClaims() {
+        List<CmPayloads.ClaimEntry> all = new ArrayList<>();
+        if (showClaims()) {
+            for (ClaimInfo c : claimsApi.allClaims()) {
+                all.add(entry(c));
+            }
+        }
+        return new CmPayloads.Claims(true, all, List.of());
+    }
+
     static String dim(ServerLevel level) {
         return level.dimension().location().toString();
     }
 
-    public @Nullable String exploredScope(UUID player) {
-        return Scopes.of(exploredMode, player, data.groups.groupIdOf(player));
+    // ---------------------------------------------------------------- groups and choices
+
+    /** The map groups a player is in (at most one with {@code /mapgroup}). */
+    public List<UUID> groupsOf(UUID player) {
+        UUID g = data.groups.groupIdOf(player);
+        return g == null ? List.of() : List.of(g);
     }
 
-    public @Nullable String locationsScope(UUID player) {
-        return Scopes.of(locationsMode, player, data.groups.groupIdOf(player));
+    private boolean groupExists(UUID id) {
+        for (MapGroup g : data.groups.all()) {
+            if (g.id().equals(id)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** The player's groups as the client shows them in the waypoint share button. */
+    private List<CmPayloads.GroupRef> groupRefs(UUID player) {
+        return data.groups.groupOf(player).map(g -> List.of(new CmPayloads.GroupRef(g.id(), g.name()))).orElse(List.of());
+    }
+
+    public List<String> exploredReadScopes(UUID player) {
+        return Sharing.exploredReadPools(exploredMode(), groupsOf(player));
     }
 
     public boolean isVisible(UUID player) {
@@ -160,6 +200,106 @@ public final class ClientMapServer {
         sendSession(player);
     }
 
+    public boolean sharesExplored(UUID player) {
+        return data.exploredSharing.getOrDefault(player, true);
+    }
+
+    public void setSharesExplored(ServerPlayer player, boolean share) {
+        data.exploredSharing.put(player.getUUID(), share);
+        data.setDirty();
+        if (share) {
+            handOverExplored(player.getUUID());
+        }
+        sendSession(player);
+    }
+
+    /** Both choices of the map settings screen at once; one session update. */
+    public void setPreferences(ServerPlayer player, boolean visible, boolean shareExplored) {
+        UUID id = player.getUUID();
+        data.visibility.put(id, visible);
+        boolean wasSharing = sharesExplored(id);
+        data.exploredSharing.put(id, shareExplored);
+        data.setDirty();
+        if (shareExplored && !wasSharing) {
+            handOverExplored(id);
+        }
+        sendSession(player);
+    }
+
+    /** Adds everything the player explored on their own to the pools they now share with. Idempotent. */
+    private void handOverExplored(UUID player) {
+        if (!sharesExplored(player)) {
+            return;
+        }
+        Map<String, ExploredLog> own = data.explored.get(Scopes.player(player));
+        if (own == null) {
+            return;
+        }
+        int added = 0;
+        for (String pool : exploredReadScopes(player)) {
+            for (Map.Entry<String, ExploredLog> e : own.entrySet()) {
+                added += data.explored(pool, e.getKey()).merge(e.getValue());
+            }
+        }
+        if (added > 0) {
+            data.setDirty();
+        }
+    }
+
+    /**
+     * The player's map groups changed (or they logged in): new pools, waypoints shared into groups they left are
+     * withdrawn, pools of groups that no longer exist are dropped.
+     */
+    public void onGroupsChanged(ServerPlayer player) {
+        onGroupsChanged(player.getUUID());
+    }
+
+    /** Same, for a player who may be offline (their shared waypoints still follow the group change). */
+    public void onGroupsChanged(UUID playerId) {
+        boolean changed = dropGonePools();
+        ServerPlayer player = server.getPlayerList().getPlayer(playerId);
+        Set<UUID> mine = new HashSet<>(groupsOf(playerId));
+        for (Map.Entry<String, List<SharedWaypoint>> e : data.waypoints.entrySet()) {
+            UUID g = Sharing.groupOf(e.getKey());
+            if (g != null && !mine.contains(g)) {
+                changed |= e.getValue().removeIf(w -> w.linked() && w.owner().equals(playerId));
+            }
+        }
+        if (changed) {
+            data.setDirty();
+            broadcastWaypoints();
+        }
+        Client c = clients.get(playerId);
+        if (c == null || player == null) {
+            return;
+        }
+        handOverExplored(playerId);
+        List<String> scopes = exploredReadScopes(playerId);
+        c.streams.keySet().removeIf(sc -> !scopes.contains(sc));
+        sendSession(player);
+        sendWaypoints(player, false);
+    }
+
+    /** Forgets explored maps and waypoints of deleted groups. Returns whether waypoints were dropped. */
+    private boolean dropGonePools() {
+        boolean waypointsDropped = false;
+        for (Iterator<String> it = data.waypoints.keySet().iterator(); it.hasNext(); ) {
+            UUID g = Sharing.groupOf(it.next());
+            if (g != null && !groupExists(g)) {
+                it.remove();
+                waypointsDropped = true;
+            }
+        }
+        boolean exploredDropped = data.explored.keySet().removeIf(sc -> {
+            UUID g = Sharing.groupOf(sc);
+            return g != null && !groupExists(g);
+        });
+        if (waypointsDropped || exploredDropped) {
+            data.setDirty();
+        }
+        return waypointsDropped;
+    }
+
     private static void send(ServerPlayer player, CustomPacketPayload payload) {
         if (player.connection.hasChannel(payload.type())) {
             PacketDistributor.sendToPlayer(player, payload);
@@ -170,13 +310,10 @@ public final class ClientMapServer {
 
     public void onHello(ServerPlayer player) {
         clients.put(player.getUUID(), new Client());
+        handOverExplored(player.getUUID());
         sendSession(player);
-        if (claimsApi != null) {
-            List<CmPayloads.ClaimEntry> all = new ArrayList<>();
-            for (ClaimInfo c : claimsApi.allClaims()) {
-                all.add(entry(c));
-            }
-            send(player, new CmPayloads.Claims(true, all, List.of()));
+        if (showClaims()) {
+            send(player, allClaims());
         }
         sendWaypoints(player, true);
     }
@@ -194,63 +331,46 @@ public final class ClientMapServer {
         if (!clients.containsKey(player.getUUID())) {
             return;
         }
-        String scope = exploredScope(player.getUUID());
-        send(player, new CmPayloads.Session(exploredMode, scope == null ? "" : scope, locationsMode,
-                isVisible(player.getUUID()), claimsApi != null));
-    }
-
-    /** After group changes: new pools for these players. */
-    public void refreshPlayers(Iterable<UUID> players) {
-        for (UUID id : players) {
-            ServerPlayer p = server.getPlayerList().getPlayer(id);
-            Client c = clients.get(id);
-            if (p != null && c != null) {
-                c.stream = null;
-                sendSession(p);
-                sendWaypoints(p, true);
-            }
-        }
+        UUID id = player.getUUID();
+        send(player, new CmPayloads.Session(exploredMode(), exploredReadScopes(id), locationsMode(), isVisible(id),
+                sharesExplored(id), showClaims(), groupRefs(id)));
     }
 
     // ---------------------------------------------------------------- explored map
 
-    /** A chunk was sent to a player: it counts as explored by their pool. */
+    /** A chunk was sent to a player: it counts as explored by them and, if they share, by their pools. */
     public void markExplored(ServerPlayer player, ServerLevel level, ChunkPos pos) {
-        String scope = exploredScope(player.getUUID());
-        if (scope != null && data.explored(scope, dim(level)).add(pos.toLong())) {
+        UUID id = player.getUUID();
+        boolean added = false;
+        for (String pool : Sharing.exploredWritePools(exploredMode(), id, groupsOf(id), sharesExplored(id))) {
+            added |= data.explored(pool, dim(level)).add(pos.toLong());
+        }
+        if (added) {
             data.setDirty();
         }
     }
 
-    /** Moves a player's own explored chunks into their new group's pool. */
-    public void mergeIntoGroup(UUID player, UUID group) {
-        Map<String, ExploredLog> own = data.explored.remove(Scopes.player(player));
-        if (own != null) {
-            own.forEach((dim, log) -> data.explored(Scopes.group(group), dim).merge(log));
-        }
-        List<SharedWaypoint> wps = data.waypoints.remove(Scopes.player(player));
-        if (wps != null && locationsMode == ShareMode.GROUPS) {
-            data.waypoints(Scopes.group(group)).addAll(wps);
-        }
-        data.setDirty();
-    }
-
     public void onExploredRequest(ServerPlayer player, CmPayloads.ExploredRequest req) {
         Client c = clients.get(player.getUUID());
-        String scope = exploredScope(player.getUUID());
-        if (c == null || scope == null || !scope.equals(req.scope()) || !req.dimension().equals(dim(player.serverLevel()))) {
+        if (c == null || !exploredReadScopes(player.getUUID()).contains(req.scope())
+                || !req.dimension().equals(dim(player.serverLevel()))) {
             return;
         }
-        c.stream = new Stream(req.dimension(), scope, Math.max(0, req.from()));
+        c.streams.put(req.scope(), new Stream(req.dimension(), req.scope(), Math.max(0, req.from())));
     }
 
-    private void tickStream(ServerPlayer player, Client c) {
-        Stream s = c.stream;
-        if (s == null || s.inFlight) {
+    private void tickStreams(ServerPlayer player, Client c) {
+        for (Stream s : List.copyOf(c.streams.values())) {
+            tickStream(player, c, s);
+        }
+    }
+
+    private void tickStream(ServerPlayer player, Client c, Stream s) {
+        if (s.inFlight) {
             return;
         }
         if (!s.dimension.equals(dim(player.serverLevel()))) {
-            c.stream = null;
+            c.streams.remove(s.scope, s);
             return;
         }
         ExploredLog log = data.explored(s.scope, s.dimension);
@@ -281,7 +401,7 @@ public final class ClientMapServer {
         s.inFlight = true;
         CompletableFuture.allOf(parts.toArray(CompletableFuture[]::new)).whenComplete((v, e) -> server.execute(() -> {
             s.inFlight = false;
-            if (c.stream != s) {
+            if (c.streams.get(s.scope) != s) {
                 return;
             }
             List<CmPayloads.ChunkEntry> entries = new ArrayList<>();
@@ -342,96 +462,111 @@ public final class ClientMapServer {
     public enum WaypointResult { SUCCESS, DISABLED, INVALID_NAME, LIMIT, NOT_FOUND, NOT_ALLOWED }
 
     private boolean isGroupOwner(UUID player, String scope) {
-        Optional<MapGroup> g = data.groups.groupOf(player);
-        return g.isPresent() && g.get().owner().equals(player) && scope.equals(Scopes.group(g.get().id()));
+        UUID g = Sharing.groupOf(scope);
+        Optional<MapGroup> group = data.groups.groupOf(player);
+        return g != null && group.isPresent() && group.get().id().equals(g) && group.get().owner().equals(player);
     }
 
     public boolean canModify(ServerPlayer player, String scope, SharedWaypoint wp) {
         return SharedWaypoint.canModify(wp, player.getUUID(), player.hasPermissions(2), isGroupOwner(player.getUUID(), scope));
     }
 
-    public WaypointResult addWaypoint(ServerPlayer player, String name, String dimension, int x, int y, int z, int color) {
-        String scope = locationsScope(player.getUUID());
-        if (scope == null) {
-            return WaypointResult.DISABLED;
+    private List<String> waypointScopes(UUID player) {
+        return Sharing.waypointReadPools(locationsMode(), player, groupsOf(player));
+    }
+
+    /**
+     * Shares one of the player's Diorama waypoints into a pool, updates it, or stops sharing it (empty scope). The
+     * id is the Diorama waypoint's; only its owner can share it.
+     */
+    public WaypointResult shareWaypoint(ServerPlayer player, CmPayloads.ShareWaypoint p) {
+        UUID me = player.getUUID();
+        String scope = p.scope() == null ? "" : p.scope();
+        if (!Sharing.maySharePool(locationsMode(), scope, groupsOf(me))) {
+            return locationsMode() == ShareMode.DISABLED ? WaypointResult.DISABLED : WaypointResult.NOT_ALLOWED;
         }
-        if (!SharedWaypoint.validName(name)) {
-            return WaypointResult.INVALID_NAME;
-        }
-        List<SharedWaypoint> list = data.waypoints(scope);
-        if (list.size() >= ClientMapConfig.MAX_WAYPOINTS.get()) {
-            return WaypointResult.LIMIT;
-        }
-        if (server.getLevel(ResourceKey.create(Registries.DIMENSION, ResourceLocation.parse(dimension))) == null) {
+        ResourceLocation dimension = ResourceLocation.tryParse(p.dimension());
+        boolean known = dimension != null && server.getLevel(ResourceKey.create(Registries.DIMENSION, dimension)) != null;
+        if (!scope.isEmpty() && !known) {
             return WaypointResult.NOT_FOUND;
         }
-        list.add(new SharedWaypoint(UUID.randomUUID(), name.trim(), dimension, x, y, z, color, player.getUUID(),
-                player.getGameProfile().getName()));
+        String oldScope = null;
+        int oldIndex = -1;
+        for (Map.Entry<String, List<SharedWaypoint>> e : data.waypoints.entrySet()) {
+            List<SharedWaypoint> list = e.getValue();
+            for (int i = 0; i < list.size(); i++) {
+                SharedWaypoint w = list.get(i);
+                if (w.id().equals(p.id())) {
+                    if (!w.owner().equals(me) || !w.linked()) {
+                        return WaypointResult.NOT_ALLOWED;
+                    }
+                    oldScope = e.getKey();
+                    oldIndex = i;
+                }
+            }
+        }
+        SharedWaypoint wp = new SharedWaypoint(p.id(), SharedWaypoint.cleanName(p.name()), p.dimension(), p.x(), p.y(), p.z(),
+                p.color() & 0xFFFFFF, me, player.getGameProfile().getName(), true);
+        if (!scope.isEmpty() && !scope.equals(oldScope) && data.waypoints(scope).size() >= ClientMapConfig.MAX_WAYPOINTS.get()) {
+            return WaypointResult.LIMIT;
+        }
+        if (oldScope != null) {
+            if (scope.equals(oldScope)) {
+                if (data.waypoints(oldScope).get(oldIndex).equals(wp)) {
+                    return WaypointResult.SUCCESS;
+                }
+                data.waypoints(oldScope).set(oldIndex, wp);
+            } else {
+                data.waypoints(oldScope).remove(oldIndex);
+                if (!scope.isEmpty()) {
+                    data.waypoints(scope).add(wp);
+                }
+            }
+        } else if (!scope.isEmpty()) {
+            data.waypoints(scope).add(wp);
+        } else {
+            return WaypointResult.SUCCESS;
+        }
         data.setDirty();
         broadcastWaypoints();
         return WaypointResult.SUCCESS;
     }
 
-    public @Nullable SharedWaypoint find(ServerPlayer player, String nameOrId) {
-        String scope = locationsScope(player.getUUID());
-        if (scope == null) {
-            return null;
+    /** Deletes a shared waypoint the player sees (old ones made with /sharedwaypoint, or others' as an admin). */
+    public WaypointResult deleteWaypoint(ServerPlayer player, UUID id) {
+        for (String scope : waypointScopes(player.getUUID())) {
+            List<SharedWaypoint> list = data.waypoints(scope);
+            for (SharedWaypoint w : list) {
+                if (w.id().equals(id)) {
+                    if (!canModify(player, scope, w)) {
+                        return WaypointResult.NOT_ALLOWED;
+                    }
+                    list.remove(w);
+                    data.setDirty();
+                    broadcastWaypoints();
+                    return WaypointResult.SUCCESS;
+                }
+            }
         }
-        for (SharedWaypoint w : data.waypoints(scope)) {
+        return locationsMode() == ShareMode.DISABLED ? WaypointResult.DISABLED : WaypointResult.NOT_FOUND;
+    }
+
+    /** Every shared waypoint the player sees, their own included (for {@code /sharedwaypoint list}). */
+    public List<SharedWaypoint> visibleWaypoints(UUID player) {
+        List<SharedWaypoint> out = new ArrayList<>();
+        for (String scope : waypointScopes(player)) {
+            out.addAll(data.waypoints(scope));
+        }
+        return out;
+    }
+
+    public @Nullable SharedWaypoint find(UUID player, String nameOrId) {
+        for (SharedWaypoint w : visibleWaypoints(player)) {
             if (w.name().equalsIgnoreCase(nameOrId) || w.id().toString().equals(nameOrId)) {
                 return w;
             }
         }
         return null;
-    }
-
-    public WaypointResult deleteWaypoint(ServerPlayer player, UUID id) {
-        String scope = locationsScope(player.getUUID());
-        if (scope == null) {
-            return WaypointResult.DISABLED;
-        }
-        List<SharedWaypoint> list = data.waypoints(scope);
-        for (SharedWaypoint w : list) {
-            if (w.id().equals(id)) {
-                if (!canModify(player, scope, w)) {
-                    return WaypointResult.NOT_ALLOWED;
-                }
-                list.remove(w);
-                data.setDirty();
-                broadcastWaypoints();
-                return WaypointResult.SUCCESS;
-            }
-        }
-        return WaypointResult.NOT_FOUND;
-    }
-
-    public WaypointResult renameWaypoint(ServerPlayer player, UUID id, String name) {
-        String scope = locationsScope(player.getUUID());
-        if (scope == null) {
-            return WaypointResult.DISABLED;
-        }
-        if (!SharedWaypoint.validName(name)) {
-            return WaypointResult.INVALID_NAME;
-        }
-        List<SharedWaypoint> list = data.waypoints(scope);
-        for (int i = 0; i < list.size(); i++) {
-            SharedWaypoint w = list.get(i);
-            if (w.id().equals(id)) {
-                if (!canModify(player, scope, w)) {
-                    return WaypointResult.NOT_ALLOWED;
-                }
-                list.set(i, w.withName(name.trim()));
-                data.setDirty();
-                broadcastWaypoints();
-                return WaypointResult.SUCCESS;
-            }
-        }
-        return WaypointResult.NOT_FOUND;
-    }
-
-    public List<SharedWaypoint> visibleWaypoints(UUID player) {
-        String scope = locationsScope(player);
-        return scope == null ? List.of() : List.copyOf(data.waypoints(scope));
     }
 
     private void broadcastWaypoints() {
@@ -448,39 +583,53 @@ public final class ClientMapServer {
         if (c == null) {
             return;
         }
-        String scope = locationsScope(player.getUUID());
+        UUID me = player.getUUID();
         List<CmPayloads.WaypointEntry> entries = new ArrayList<>();
-        if (scope != null) {
+        for (String scope : waypointScopes(me)) {
             for (SharedWaypoint w : data.waypoints(scope)) {
+                if (w.linked() && w.owner().equals(me)) {
+                    continue;
+                }
                 entries.add(new CmPayloads.WaypointEntry(w.id(), w.name(), w.dimension(), w.x(), w.y(), w.z(), w.color(),
                         w.ownerName(), canModify(player, scope, w)));
             }
         }
-        String hash = entries.toString();
+        List<CmPayloads.MyShare> mine = new ArrayList<>();
+        data.waypoints.forEach((scope, list) -> {
+            for (SharedWaypoint w : list) {
+                if (w.linked() && w.owner().equals(me)) {
+                    mine.add(new CmPayloads.MyShare(w.id(), scope));
+                }
+            }
+        });
+        String hash = entries + "|" + mine;
         if (force || !hash.equals(c.waypointsHash)) {
             c.waypointsHash = hash;
-            send(player, new CmPayloads.Waypoints(entries));
+            send(player, new CmPayloads.Waypoints(entries, mine));
         }
     }
 
     // ---------------------------------------------------------------- players
 
     private void sendPlayers() {
+        List<ServerPlayer> online = server.getPlayerList().getPlayers();
+        Map<UUID, List<UUID>> groups = new HashMap<>();
+        for (ServerPlayer p : online) {
+            groups.put(p.getUUID(), groupsOf(p.getUUID()));
+        }
+        ShareMode mode = locationsMode();
         for (UUID id : clients.keySet()) {
             ServerPlayer viewer = server.getPlayerList().getPlayer(id);
             if (viewer == null) {
                 continue;
             }
             List<CmPayloads.PlayerEntry> list = new ArrayList<>();
-            String scope = locationsScope(id);
-            if (scope != null) {
-                for (ServerPlayer p : server.getPlayerList().getPlayers()) {
-                    if (p == viewer || p.isSpectator() || !isVisible(p.getUUID())) {
-                        continue;
-                    }
-                    if (scope.equals(locationsScope(p.getUUID()))) {
-                        list.add(new CmPayloads.PlayerEntry(p.getUUID(), dim(p.serverLevel()), p.getX(), p.getY(), p.getZ()));
-                    }
+            for (ServerPlayer p : online) {
+                if (p == viewer || p.isSpectator() || !isVisible(p.getUUID())) {
+                    continue;
+                }
+                if (Sharing.seesPosition(mode, groups.getOrDefault(id, List.of()), groups.getOrDefault(p.getUUID(), List.of()))) {
+                    list.add(new CmPayloads.PlayerEntry(p.getUUID(), dim(p.serverLevel()), p.getX(), p.getY(), p.getZ()));
                 }
             }
             send(viewer, new CmPayloads.Players(list));
@@ -501,6 +650,10 @@ public final class ClientMapServer {
 
     private void flushClaims() {
         if (pendingClaims.isEmpty()) {
+            return;
+        }
+        if (!showClaims()) {
+            pendingClaims.clear();
             return;
         }
         List<CmPayloads.ClaimEntry> updated = new ArrayList<>();
@@ -533,7 +686,7 @@ public final class ClientMapServer {
         for (Map.Entry<UUID, Client> e : clients.entrySet()) {
             ServerPlayer p = server.getPlayerList().getPlayer(e.getKey());
             if (p != null) {
-                tickStream(p, e.getValue());
+                tickStreams(p, e.getValue());
             }
         }
         flushClaims();
