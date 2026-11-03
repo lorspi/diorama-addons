@@ -233,10 +233,10 @@ screen).
 
 35. **Versions and tags per mod.** Each module keeps `mod_version` in its own `gradle.properties`;
     releases are tagged `<module>-v<semver>` (`claims-v0.1.0`, `claims-api-v0.1.0`...). One
-    `CHANGELOG.md` with a section per module.
+    `CHANGELOG.md` per module (`<module>/CHANGELOG.md`; the root one only links them).
 36. **Release workflow** (`.github/workflows/release.yml`) runs on those tags:
     `.github/scripts/release_info.py` checks the tag format, that `mod_version` matches and that the
-    changelog has an entry, then the mod is built and tested and `gh release create` publishes its jar
+    module's changelog has an entry, then the mod is built and tested and `gh release create` publishes its jar
     with the changelog entry as notes. Only GitHub's own CLI is used, no third-party release action.
     Modrinth/CurseForge publishing is left for later.
 37. **claims-api is released as its own tag** for API consumers, even though players never install it

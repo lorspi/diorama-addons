@@ -46,11 +46,11 @@ vanilla client can still join a server with the changed mod.
 ## Changelog and versions
 
 Each mod has its own [SemVer](https://semver.org/) version in `<module>/gradle.properties`
-(`mod_version`). Add your change to `CHANGELOG.md` under `[Unreleased]` of every mod it touches.
+(`mod_version`). Add your change under `[Unreleased]` in the `CHANGELOG.md` of every mod it touches (`<module>/CHANGELOG.md`).
 
 ## Releasing (maintainers)
 
-1. Move the mod's `[Unreleased]` notes in `CHANGELOG.md` to a new `### [x.y.z] - YYYY-MM-DD` entry.
+1. Move the `[Unreleased]` notes in `<module>/CHANGELOG.md` to a new `## [x.y.z] - YYYY-MM-DD` entry.
 2. Set `mod_version=x.y.z` in `<module>/gradle.properties` and commit (`chore(<module>): release x.y.z`).
 3. Tag and push: `git tag -a <module>-vx.y.z -m "<module> x.y.z" && git push origin <module>-vx.y.z`.
 

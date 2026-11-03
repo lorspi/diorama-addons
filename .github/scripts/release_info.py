@@ -29,14 +29,14 @@ def main():
     if props.get("mod_version") != version:
         fail(f"{module}/gradle.properties has mod_version={props.get('mod_version')}, tag says {version}")
 
-    with open("CHANGELOG.md", encoding="utf-8") as f:
+    changelog = os.path.join(module, "CHANGELOG.md")
+    if not os.path.exists(changelog):
+        fail(f"{changelog} does not exist")
+    with open(changelog, encoding="utf-8") as f:
         text = f.read()
-    section = re.search(rf"^## {re.escape(module)}\n(.*?)(?=^## |\Z)", text, re.S | re.M)
-    if not section:
-        fail(f"CHANGELOG.md has no '## {module}' section")
-    entry = re.search(rf"^### \[{re.escape(version)}\][^\n]*\n(.*?)(?=^### |\Z)", section.group(1), re.S | re.M)
+    entry = re.search(rf"^## \[{re.escape(version)}\][^\n]*\n(.*?)(?=^## |\Z)", text, re.S | re.M)
     if not entry or not entry.group(1).strip():
-        fail(f"CHANGELOG.md has no entry for {module} {version}")
+        fail(f"{changelog} has no entry for {version}")
 
     with open(notes_path, "w", encoding="utf-8") as f:
         f.write(entry.group(1).strip() + "\n")

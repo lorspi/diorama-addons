@@ -3,13 +3,13 @@
 Land claims, a web map and shared maps for Minecraft 1.21.1 on NeoForge. Four **independent** mods: each
 one builds its own jar and works alone, and they work together when installed side by side.
 
-| Mod | Mod ID | Install on | What it does |
-|---|---|---|---|
-| [Claims](#claims) | `dioaddons_claims` | Server (required), client (optional, for the screen) | Protect land chunk by chunk, add friends, set permissions |
-| [Web Map](#web-map) | `dioaddons_webmap` | Server only | Live world map in the browser, with claims |
-| [Client Map](#client-map-diorama) | `dioaddons_clientmap` | Server and clients with [Diorama](https://modrinth.com/mod/diorama-map) | Claims, shared explored map, shared waypoints and positions in Diorama |
-| Claims API | `dioaddons_claims_api` | Nothing to do: bundled inside the other jars | Small read-only API other mods can use |
-| Render Core | `dioaddons_render_core` | Nothing to do: bundled inside the jars that draw maps | Terrain shading in the Diorama style |
+| Mod | Version | Mod ID | Install on | What it does |
+|---|---|---|---|---|
+| [Claims](#claims) | 0.3.0 · [changelog](claims/CHANGELOG.md) | `dioaddons_claims` | Server (required), client (optional, for the screen) | Protect land chunk by chunk, add friends, set permissions, greet visitors |
+| [Web Map](#web-map) | 0.3.0 · [changelog](webmap/CHANGELOG.md) | `dioaddons_webmap` | Server only | Live world map in the browser, with claims |
+| [Client Map](#client-map-diorama) | 0.3.0 · [changelog](clientmap/CHANGELOG.md) | `dioaddons_clientmap` | Server and clients with [Diorama](https://modrinth.com/mod/diorama-map) | Claims, shared explored map, shared waypoints and positions in Diorama |
+| Claims API | 0.1.0 · [changelog](claims-api/CHANGELOG.md) | `dioaddons_claims_api` | Nothing to do: bundled inside the other jars | Small read-only API other mods can use |
+| Render Core | 0.1.0 · [changelog](render-core/CHANGELOG.md) | `dioaddons_render_core` | Nothing to do: bundled inside the jars that draw maps | Terrain shading in the Diorama style |
 
 Players **without any of these mods can join** a server that has them; everything can also be done with
 commands.
@@ -25,7 +25,7 @@ commands.
 
 ## Claims
 
-![Claims screen with the members tab](docs/images/claims-gui.png)
+![Claims screen: the terrain around you with your claims](docs/images/claims-gui.png)
 
 - The unit is the **chunk**. Chunks of a claim touch each other; each player has limits on chunks and
   claims (being a friend in someone else's claim does not count).
@@ -40,6 +40,11 @@ commands.
 - **Settings tab** per claim: a welcome and a farewell notification for whoever enters or leaves (title and
   message, with `{player}`, `{claim}`, `{owner}` and colours like `&a`), and a **visitor alarm** for the owner
   and/or the members. Players without the mod see the notifications too.
+- Operators can give one player their own chunk, claim or member limits (`/claims admin limits`).
+
+| | |
+|---|---|
+| ![Settings tab: welcome and farewell notifications and visitor alarm](docs/images/claims-settings.png) | ![Welcome notification when entering a claim](docs/images/claims-welcome.png) |
 
 | Command | |
 |---|---|
@@ -106,6 +111,11 @@ API: [docs/webmap-api.md](docs/webmap-api.md).
 - **Player positions** of your group on the map and radar.
 - **Map settings** (map right-click → *Map settings…*, `/clientmap settings` or the mods list): claims on the
   map, claims on the minimap, share my location, share my explored map.
+
+| | |
+|---|---|
+| ![Share button in Diorama's waypoint screen](docs/images/diorama-waypoint-share.png) | ![Map right-click menu: claim this chunk, map settings](docs/images/diorama-map-menu.png) |
+| ![Map settings](docs/images/diorama-map-settings.png) | |
 - The server decides, separately for the explored map and for locations: off, shared by everyone, or by
   groups of friends.
 
@@ -136,9 +146,10 @@ Jars are written to `<module>/build/libs/`. More in [CONTRIBUTING.md](CONTRIBUTI
 - [Claims permissions and commands](docs/claims-permissions.md)
 - [Web map HTTP API](docs/webmap-api.md)
 - [Diorama research and integration plan](docs/clientmap-research.md)
-- [Changelog](CHANGELOG.md)
+- Changelogs: [Claims](claims/CHANGELOG.md) · [Web Map](webmap/CHANGELOG.md) · [Client Map](clientmap/CHANGELOG.md) ·
+  [Claims API](claims-api/CHANGELOG.md) · [Render Core](render-core/CHANGELOG.md)
 
 ## License
 
-[MIT](LICENSE). Third-party notices (Leaflet) in [THIRD_PARTY.md](THIRD_PARTY.md). Diorama is a separate
+[MIT](LICENSE). Third-party notices (Diorama map style, Leaflet, Mochos Esenciales) in [THIRD_PARTY.md](THIRD_PARTY.md). Diorama is a separate
 project by its own authors and is not included.
