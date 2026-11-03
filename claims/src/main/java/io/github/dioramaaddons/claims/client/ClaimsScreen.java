@@ -533,6 +533,8 @@ public final class ClaimsScreen extends Screen {
         EditBox box = new EditBox(font, panelX, y, PANEL_W, 16, Component.translatable(hintKey));
         box.setMaxLength(max);
         box.setValue(greetingDrafts[index]);
+        // Show the start of long texts, not their end.
+        box.moveCursorToStart(false);
         box.setResponder(v -> greetingDrafts[index] = v);
         box.setHint(Component.translatable(hintKey).withStyle(ChatFormatting.DARK_GRAY));
         box.setTooltip(net.minecraft.client.gui.components.Tooltip.create(
