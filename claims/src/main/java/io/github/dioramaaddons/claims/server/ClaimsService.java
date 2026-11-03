@@ -2,10 +2,12 @@ package io.github.dioramaaddons.claims.server;
 
 import io.github.dioramaaddons.claims.config.ClaimsConfig;
 import io.github.dioramaaddons.claims.core.Claim;
+import io.github.dioramaaddons.claims.core.ClaimLimits;
 import io.github.dioramaaddons.claims.core.ClaimMember;
 import io.github.dioramaaddons.claims.core.ClaimStore;
 import io.github.dioramaaddons.claims.core.Permission;
 import io.github.dioramaaddons.claims.core.PermissionResolver;
+import io.github.dioramaaddons.claims.core.PlayerLimits;
 import io.github.dioramaaddons.claims.data.ClaimSavedData;
 import io.github.dioramaaddons.claims.network.StatePayload;
 import io.github.dioramaaddons.claimsapi.ClaimChangeListener;
@@ -45,6 +47,7 @@ public final class ClaimsService implements ClaimsApi {
     private final Map<UUID, Subscription> subscribers = new HashMap<>();
     private final Map<UUID, Long> lastDenial = new HashMap<>();
     private boolean guiDirty;
+    private final ClaimGreetings greetings;
 
     private static final class Subscription {
         int radius;
@@ -57,6 +60,7 @@ public final class ClaimsService implements ClaimsApi {
         this.data = server.overworld().getDataStorage().computeIfAbsent(ClaimSavedData.FACTORY, ClaimSavedData.NAME);
         store().setDefaultPublicPermissions(ClaimsConfig.defaultPublicPermissions());
         store().addListener(this::onStoreChanged);
+        this.greetings = new ClaimGreetings(this, server);
     }
 
     public static @Nullable ClaimsService get() {
@@ -83,6 +87,24 @@ public final class ClaimsService implements ClaimsApi {
 
     public ClaimStore store() {
         return data.store();
+    }
+
+    /** Server limits with each player's own limits. */
+    public ClaimLimits limits() {
+        return ClaimsConfig.limits(store().perPlayer());
+    }
+
+    /** {@link #limits()} of the running service, or the server limits alone when none is running. */
+    public static ClaimLimits currentLimits() {
+        ClaimsService s = get();
+        return s == null ? ClaimsConfig.limits() : s.limits();
+    }
+
+    /** Sets (or clears with {@code null}) a player's own limit, and saves. */
+    public void setPlayerLimit(UUID player, PlayerLimits.Key key, @Nullable Integer value) {
+        store().setPlayerLimit(player, key, value);
+        data.setDirty();
+        guiDirty = true;
     }
 
     public static String dimensionId(Level level) {
@@ -189,6 +211,7 @@ public final class ClaimsService implements ClaimsApi {
     public void onPlayerLogout(ServerPlayer player) {
         subscribers.remove(player.getUUID());
         lastDenial.remove(player.getUUID());
+        greetings.onLogout(player);
     }
 
     /** Online player or profile cache lookup by name. */
@@ -234,6 +257,7 @@ public final class ClaimsService implements ClaimsApi {
 
     /** Called every server tick. */
     public void tick() {
+        greetings.tick();
         boolean all = guiDirty;
         guiDirty = false;
         if (subscribers.isEmpty()) {
@@ -310,7 +334,7 @@ public final class ClaimsService implements ClaimsApi {
                 members.add(new StatePayload.Member(m.id(), m.name(), Permission.toMask(m.permissions())));
             }
             details.add(new StatePayload.ClaimDetail(c.id(), c.name(), c.owner(), c.ownerName(), c.dimension(),
-                    c.chunks().size(), Permission.toMask(c.publicPermissions()), members));
+                    c.chunks().size(), Permission.toMask(c.publicPermissions()), members, c.settings()));
         }
         List<String> online = new ArrayList<>();
         for (ServerPlayer p : server.getPlayerList().getPlayers()) {
@@ -318,10 +342,10 @@ public final class ClaimsService implements ClaimsApi {
                 online.add(p.getGameProfile().getName());
             }
         }
-        var limits = ClaimsConfig.limits();
+        var limits = limits();
         return new StatePayload(dim, center.x, center.z, radius, gridClaims, cells, details,
-                store().chunkCount(me), limits.maxChunksPerPlayer(), store().claimsOf(me).size(),
-                limits.maxClaimsPerPlayer(), isAdmin(player), admin, online, feedback);
+                store().chunkCount(me), limits.maxChunksFor(me), store().claimsOf(me).size(),
+                limits.maxClaimsFor(me), isAdmin(player), admin, online, feedback);
     }
 
     // ---------------------------------------------------------------- claims-api

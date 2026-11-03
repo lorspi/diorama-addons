@@ -57,6 +57,8 @@ public final class ClaimStore {
     private final Map<UUID, Claim> claims = new LinkedHashMap<>();
     private final Map<String, Map<Long, UUID>> index = new HashMap<>();
     private final List<Listener> listeners = new CopyOnWriteArrayList<>();
+    /** Players' own limits, set by an operator. */
+    private final Map<UUID, PlayerLimits> playerLimits = new HashMap<>();
     private EnumSet<Permission> defaultPublicPermissions = EnumSet.noneOf(Permission.class);
 
     /** Public permissions given to claims created from now on. */
@@ -180,7 +182,7 @@ public final class ClaimStore {
                 && chebyshev(chunk, spawnChunk) < limits.minSpawnDistance()) {
             return Outcome.of(ClaimResult.TOO_CLOSE_TO_SPAWN);
         }
-        if (!actor.admin() && chunkCount(owner) >= limits.maxChunksPerPlayer()) {
+        if (!actor.admin() && chunkCount(owner) >= limits.maxChunksFor(owner)) {
             return Outcome.of(ClaimResult.CHUNK_LIMIT);
         }
 
@@ -203,7 +205,7 @@ public final class ClaimStore {
             return new Outcome(ClaimResult.SUCCESS, targetClaim);
         }
 
-        if (!actor.admin() && claimsOf(owner).size() >= limits.maxClaimsPerPlayer()) {
+        if (!actor.admin() && claimsOf(owner).size() >= limits.maxClaimsFor(owner)) {
             return Outcome.of(ClaimResult.CLAIM_LIMIT);
         }
         String name = newClaimName != null && isValidName(newClaimName) ? newClaimName.trim() : defaultName(owner);
@@ -373,7 +375,7 @@ public final class ClaimStore {
         }
         ClaimMember existing = claim.mutableMembers().get(memberId);
         if (existing == null) {
-            if (!actor.admin() && claim.members().size() >= limits.maxMembersPerClaim()) {
+            if (!actor.admin() && claim.members().size() >= limits.maxMembersFor(claim.owner())) {
                 return Outcome.of(ClaimResult.MEMBER_LIMIT);
             }
             claim.mutableMembers().put(memberId, new ClaimMember(memberId, memberName, perms));
@@ -407,6 +409,45 @@ public final class ClaimStore {
         o.claim().setPublicPermissions(perms);
         fire(ChangeType.UPDATED, o.claim());
         return o;
+    }
+
+    /** Welcome / farewell notifications and visitor alarm of a claim. Owner (or an admin actor) only. */
+    public Outcome setSettings(Actor actor, UUID claimId, ClaimSettings settings) {
+        Outcome o = editable(actor, claimId);
+        if (!o.result().ok()) {
+            return o;
+        }
+        if (!o.claim().settings().equals(settings)) {
+            o.claim().setSettings(settings);
+            fire(ChangeType.UPDATED, o.claim());
+        }
+        return o;
+    }
+
+    // ---------------------------------------------------------------- players' own limits
+
+    /** A player's own limit, or empty when the server limit applies. */
+    public Optional<Integer> playerLimit(UUID player, PlayerLimits.Key key) {
+        PlayerLimits l = playerLimits.get(player);
+        return l == null ? Optional.empty() : l.get(key);
+    }
+
+    /** Sets (or clears with {@code null}) a player's own limit. */
+    public void setPlayerLimit(UUID player, PlayerLimits.Key key, Integer value) {
+        PlayerLimits l = playerLimits.computeIfAbsent(player, k -> new PlayerLimits());
+        l.set(key, value);
+        if (l.isEmpty()) {
+            playerLimits.remove(player);
+        }
+    }
+
+    public Map<UUID, PlayerLimits> playerLimits() {
+        return Collections.unmodifiableMap(playerLimits);
+    }
+
+    /** {@link ClaimLimits.PerPlayer} backed by the limits stored here. */
+    public ClaimLimits.PerPlayer perPlayer() {
+        return (owner, key, serverValue) -> playerLimit(owner, key).orElse(serverValue);
     }
 
     /**

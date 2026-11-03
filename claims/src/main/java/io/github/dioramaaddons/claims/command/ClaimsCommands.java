@@ -3,6 +3,7 @@ package io.github.dioramaaddons.claims.command;
 import com.mojang.authlib.GameProfile;
 import com.mojang.brigadier.CommandDispatcher;
 import com.mojang.brigadier.arguments.BoolArgumentType;
+import com.mojang.brigadier.arguments.IntegerArgumentType;
 import com.mojang.brigadier.arguments.StringArgumentType;
 import com.mojang.brigadier.context.CommandContext;
 import com.mojang.brigadier.exceptions.CommandSyntaxException;
@@ -11,10 +12,12 @@ import io.github.dioramaaddons.claims.config.ClaimsConfig;
 import io.github.dioramaaddons.claims.core.Claim;
 import io.github.dioramaaddons.claims.core.ClaimMember;
 import io.github.dioramaaddons.claims.core.ClaimResult;
+import io.github.dioramaaddons.claims.core.ClaimSettings;
 import io.github.dioramaaddons.claims.core.ClaimStore;
 import io.github.dioramaaddons.claims.core.Permission;
 import io.github.dioramaaddons.claims.core.PermissionResolver;
 import io.github.dioramaaddons.claims.core.PermissionTemplate;
+import io.github.dioramaaddons.claims.core.PlayerLimits;
 import io.github.dioramaaddons.claims.network.OpenScreenPayload;
 import io.github.dioramaaddons.claims.server.ClaimsService;
 import io.github.dioramaaddons.claims.server.ServerLang;
@@ -92,6 +95,15 @@ public final class ClaimsCommands {
                                 .then(Commands.argument("player", GameProfileArgument.gameProfile())
                                         .then(Commands.argument("template", StringArgumentType.word()).suggests(TEMPLATES)
                                                 .executes(ctx -> trust(ctx, template(ctx)))))))
+                .then(Commands.literal("settings")
+                        .executes(ClaimsCommands::showSettings)
+                        .then(greetingNode("welcome", true))
+                        .then(greetingNode("farewell", false))
+                        .then(Commands.literal("alarm")
+                                .then(Commands.literal("owner").then(Commands.argument("on", BoolArgumentType.bool())
+                                        .executes(ctx -> alarm(ctx, true, BoolArgumentType.getBool(ctx, "on")))))
+                                .then(Commands.literal("members").then(Commands.argument("on", BoolArgumentType.bool())
+                                        .executes(ctx -> alarm(ctx, false, BoolArgumentType.getBool(ctx, "on")))))))
                 .then(Commands.literal("admin")
                         .requires(src -> src.hasPermission(ClaimsConfig.SERVER.adminPermissionLevel.get()))
                         .then(Commands.literal("bypass").executes(ClaimsCommands::bypass))
@@ -103,7 +115,30 @@ public final class ClaimsCommands {
                         .then(Commands.literal("unclaim").executes(ClaimsCommands::adminUnclaim))
                         .then(Commands.literal("transfer")
                                 .then(Commands.argument("player", GameProfileArgument.gameProfile())
-                                        .executes(ClaimsCommands::adminTransfer)))));
+                                        .executes(ClaimsCommands::adminTransfer)))
+                        .then(Commands.literal("limits")
+                                .then(Commands.argument("player", GameProfileArgument.gameProfile())
+                                        .executes(ClaimsCommands::adminShowLimits)
+                                        .then(Commands.literal("reset").executes(ClaimsCommands::adminResetLimits))
+                                        .then(Commands.argument("limit", StringArgumentType.word()).suggests(LIMIT_KEYS)
+                                                .then(Commands.literal("default").executes(ctx -> adminSetLimit(ctx, null)))
+                                                .then(Commands.argument("value", IntegerArgumentType.integer(0, 1_000_000))
+                                                        .executes(ctx -> adminSetLimit(ctx,
+                                                                IntegerArgumentType.getInteger(ctx, "value")))))))));
+    }
+
+    private static final SuggestionProvider<CommandSourceStack> LIMIT_KEYS = (ctx, b) ->
+            SharedSuggestionProvider.suggest(Arrays.stream(PlayerLimits.Key.values()).map(PlayerLimits.Key::id), b);
+
+    /** {@code welcome|farewell [title <text> | text <text> | clear]}. */
+    private static com.mojang.brigadier.builder.LiteralArgumentBuilder<CommandSourceStack> greetingNode(String name,
+            boolean welcome) {
+        return Commands.literal(name)
+                .then(Commands.literal("title").then(Commands.argument("text", StringArgumentType.greedyString())
+                        .executes(ctx -> greeting(ctx, welcome, StringArgumentType.getString(ctx, "text"), null))))
+                .then(Commands.literal("text").then(Commands.argument("text", StringArgumentType.greedyString())
+                        .executes(ctx -> greeting(ctx, welcome, null, StringArgumentType.getString(ctx, "text")))))
+                .then(Commands.literal("clear").executes(ctx -> greeting(ctx, welcome, "", "")));
     }
 
     // ---------------------------------------------------------------- helpers
@@ -193,11 +228,12 @@ public final class ClaimsCommands {
     private static int help(CommandContext<CommandSourceStack> ctx) {
         CommandSourceStack src = ctx.getSource();
         for (String line : List.of("claim", "unclaim", "menu", "list", "info", "rename", "delete", "trust", "untrust",
-                "permission_public", "permission_member", "permission_template")) {
+                "permission_public", "permission_member", "permission_template", "settings", "settings_alarm")) {
             src.sendSuccess(() -> ServerLang.tr(src, "dioaddons_claims.help." + line), false);
         }
         if (src.hasPermission(ClaimsConfig.SERVER.adminPermissionLevel.get())) {
-            for (String line : List.of("admin_bypass", "admin_list", "admin_delete", "admin_unclaim", "admin_transfer")) {
+            for (String line : List.of("admin_bypass", "admin_list", "admin_delete", "admin_unclaim", "admin_transfer",
+                    "admin_limits")) {
                 src.sendSuccess(() -> ServerLang.tr(src, "dioaddons_claims.help." + line), false);
             }
         }
@@ -212,12 +248,12 @@ public final class ClaimsCommands {
             return fail(ctx.getSource(), ClaimResult.INVALID_NAME.translationKey());
         }
         ClaimStore.Outcome o = s.store().claimChunk(s.actor(player), ClaimsService.dimensionId(player.level()),
-                chunk.toLong(), null, name, ClaimsConfig.limits(), s.spawnChunk(player.serverLevel()));
+                chunk.toLong(), null, name, ClaimsService.currentLimits(), s.spawnChunk(player.serverLevel()));
         if (!o.result().ok()) {
             return fail(ctx.getSource(), o.result().translationKey());
         }
         return ok(ctx.getSource(), "dioaddons_claims.cmd.claimed", chunk.x, chunk.z, o.claim().name(),
-                s.store().chunkCount(player.getUUID()), ClaimsConfig.limits().maxChunksPerPlayer());
+                s.store().chunkCount(player.getUUID()), ClaimsService.currentLimits().maxChunksFor(player.getUUID()));
     }
 
     private static int unclaim(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
@@ -225,7 +261,7 @@ public final class ClaimsCommands {
         ClaimsService s = service();
         ChunkPos chunk = player.chunkPosition();
         ClaimStore.Outcome o = s.store().unclaimChunk(s.actor(player), ClaimsService.dimensionId(player.level()),
-                chunk.toLong(), ClaimsConfig.limits());
+                chunk.toLong(), ClaimsService.currentLimits());
         return result(ctx.getSource(), o.result(), "dioaddons_claims.cmd.unclaimed", chunk.x, chunk.z);
     }
 
@@ -243,8 +279,8 @@ public final class ClaimsCommands {
         ClaimsService s = service();
         List<Claim> claims = s.store().claimsOf(owner);
         src.sendSuccess(() -> ServerLang.tr(src, "dioaddons_claims.cmd.list_header", claims.size(),
-                ClaimsConfig.limits().maxClaimsPerPlayer(), s.store().chunkCount(owner),
-                ClaimsConfig.limits().maxChunksPerPlayer()), false);
+                ClaimsService.currentLimits().maxClaimsFor(owner), s.store().chunkCount(owner),
+                ClaimsService.currentLimits().maxChunksFor(owner)), false);
         for (Claim c : claims) {
             src.sendSuccess(() -> describe(src, c), false);
         }
@@ -318,7 +354,7 @@ public final class ClaimsCommands {
         GameProfile profile = singleProfile(ctx);
         ServerPlayer player = ctx.getSource().getPlayerOrException();
         ClaimResult r = service().store().setMember(service().actor(player), claim.id(), profile.getId(),
-                profile.getName(), template.permissions(), ClaimsConfig.limits()).result();
+                profile.getName(), template.permissions(), ClaimsService.currentLimits()).result();
         return result(ctx.getSource(), r, "dioaddons_claims.cmd.trusted", profile.getName(), claim.name(),
                 ServerLang.tr(ctx.getSource(), template.translationKey()));
     }
@@ -376,7 +412,7 @@ public final class ClaimsCommands {
         }
         ServerPlayer player = ctx.getSource().getPlayerOrException();
         ClaimResult r = service().store().setMember(service().actor(player), claim.id(), member.id(), member.name(),
-                perms, ClaimsConfig.limits()).result();
+                perms, ClaimsService.currentLimits()).result();
         return result(ctx.getSource(), r, allow ? "dioaddons_claims.cmd.member_allowed" : "dioaddons_claims.cmd.member_denied",
                 ServerLang.tr(ctx.getSource(), perm.translationKey()), member.name());
     }
@@ -431,7 +467,107 @@ public final class ClaimsCommands {
         ChunkPos chunk = player.chunkPosition();
         ClaimStore.Actor admin = new ClaimStore.Actor(player.getUUID(), player.getGameProfile().getName(), true);
         ClaimResult r = service().store().unclaimChunk(admin, ClaimsService.dimensionId(player.level()), chunk.toLong(),
-                ClaimsConfig.limits()).result();
+                ClaimsService.currentLimits()).result();
         return result(ctx.getSource(), r, "dioaddons_claims.cmd.unclaimed", chunk.x, chunk.z);
+    }
+
+    // ---------------------------------------------------------------- claim settings
+
+    private static int showSettings(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        Claim claim = manageableHere(ctx);
+        if (claim == null) {
+            return 0;
+        }
+        CommandSourceStack src = ctx.getSource();
+        ClaimSettings s = claim.settings();
+        Component none = ServerLang.tr(src, "dioaddons_claims.info.none");
+        src.sendSuccess(() -> ServerLang.tr(src, "dioaddons_claims.settings.header", claim.name()), false);
+        src.sendSuccess(() -> ServerLang.tr(src, "dioaddons_claims.settings.cmd_welcome",
+                s.welcomeTitle().isEmpty() ? claim.name() : s.welcomeTitle(),
+                s.welcome().isEmpty() ? none : Component.literal(s.welcome())), false);
+        src.sendSuccess(() -> ServerLang.tr(src, "dioaddons_claims.settings.cmd_farewell",
+                s.farewellTitle().isEmpty() ? claim.name() : s.farewellTitle(),
+                s.farewell().isEmpty() ? none : Component.literal(s.farewell())), false);
+        src.sendSuccess(() -> ServerLang.tr(src, "dioaddons_claims.settings.cmd_alarm",
+                ServerLang.tr(src, s.alarmOwner() ? "dioaddons_claims.settings.on" : "dioaddons_claims.settings.off"),
+                ServerLang.tr(src, s.alarmMembers() ? "dioaddons_claims.settings.on" : "dioaddons_claims.settings.off")),
+                false);
+        return 1;
+    }
+
+    /** Changes the title and/or text of one notification; {@code null} keeps the current value. */
+    private static int greeting(CommandContext<CommandSourceStack> ctx, boolean welcome, String title, String text)
+            throws CommandSyntaxException {
+        Claim claim = manageableHere(ctx);
+        if (claim == null) {
+            return 0;
+        }
+        ClaimSettings s = claim.settings();
+        ClaimSettings next = welcome
+                ? s.withWelcome(title == null ? s.welcomeTitle() : title, text == null ? s.welcome() : text)
+                : s.withFarewell(title == null ? s.farewellTitle() : title, text == null ? s.farewell() : text);
+        return saveSettings(ctx, claim, next);
+    }
+
+    private static int alarm(CommandContext<CommandSourceStack> ctx, boolean owner, boolean on)
+            throws CommandSyntaxException {
+        Claim claim = manageableHere(ctx);
+        if (claim == null) {
+            return 0;
+        }
+        ClaimSettings s = claim.settings();
+        return saveSettings(ctx, claim, owner ? s.withAlarms(on, s.alarmMembers()) : s.withAlarms(s.alarmOwner(), on));
+    }
+
+    private static int saveSettings(CommandContext<CommandSourceStack> ctx, Claim claim, ClaimSettings next)
+            throws CommandSyntaxException {
+        ServerPlayer player = ctx.getSource().getPlayerOrException();
+        ClaimResult r = service().store().setSettings(service().actor(player), claim.id(), next).result();
+        if (!r.ok()) {
+            return fail(ctx.getSource(), r.translationKey());
+        }
+        ok(ctx.getSource(), "dioaddons_claims.settings.saved", claim.name());
+        return showSettings(ctx);
+    }
+
+    // ---------------------------------------------------------------- players' own limits
+
+    private static int adminShowLimits(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        GameProfile profile = singleProfile(ctx);
+        CommandSourceStack src = ctx.getSource();
+        ClaimsService s = service();
+        var limits = s.limits();
+        UUID id = profile.getId();
+        src.sendSuccess(() -> ServerLang.tr(src, "dioaddons_claims.admin.limits",
+                profile.getName(),
+                limitText(src, s, id, PlayerLimits.Key.CHUNKS, limits.maxChunksFor(id)),
+                limitText(src, s, id, PlayerLimits.Key.CLAIMS, limits.maxClaimsFor(id)),
+                limitText(src, s, id, PlayerLimits.Key.MEMBERS, limits.maxMembersFor(id))), false);
+        return 1;
+    }
+
+    private static Component limitText(CommandSourceStack src, ClaimsService s, UUID id, PlayerLimits.Key key, int value) {
+        boolean own = s.store().playerLimit(id, key).isPresent();
+        return ServerLang.tr(src, own ? "dioaddons_claims.admin.limit_own" : "dioaddons_claims.admin.limit_server",
+                value);
+    }
+
+    private static int adminSetLimit(CommandContext<CommandSourceStack> ctx, Integer value) throws CommandSyntaxException {
+        String id = StringArgumentType.getString(ctx, "limit");
+        PlayerLimits.Key key = PlayerLimits.Key.byId(id).orElse(null);
+        if (key == null) {
+            return fail(ctx.getSource(), "dioaddons_claims.error.unknown_limit", id);
+        }
+        GameProfile profile = singleProfile(ctx);
+        service().setPlayerLimit(profile.getId(), key, value);
+        return adminShowLimits(ctx);
+    }
+
+    private static int adminResetLimits(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+        GameProfile profile = singleProfile(ctx);
+        for (PlayerLimits.Key key : PlayerLimits.Key.values()) {
+            service().setPlayerLimit(profile.getId(), key, null);
+        }
+        return adminShowLimits(ctx);
     }
 }

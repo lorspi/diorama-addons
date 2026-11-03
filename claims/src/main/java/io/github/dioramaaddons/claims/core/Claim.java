@@ -23,6 +23,7 @@ public final class Claim {
     private final Set<Long> chunks = new LinkedHashSet<>();
     private final Map<UUID, ClaimMember> members = new LinkedHashMap<>();
     private final EnumSet<Permission> publicPermissions = EnumSet.noneOf(Permission.class);
+    private ClaimSettings settings = ClaimSettings.DEFAULT;
 
     public Claim(UUID id, String name, UUID owner, String ownerName, String dimension) {
         this.id = id;
@@ -92,6 +93,14 @@ public final class Claim {
     void setPublicPermissions(EnumSet<Permission> perms) {
         publicPermissions.clear();
         publicPermissions.addAll(perms);
+    }
+
+    public ClaimSettings settings() {
+        return settings;
+    }
+
+    void setSettings(ClaimSettings settings) {
+        this.settings = settings == null ? ClaimSettings.DEFAULT : settings;
     }
 
     /** Claim-wide flag (scope {@link Permission.Scope#CLAIM}). */

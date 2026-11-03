@@ -34,6 +34,9 @@ public final class ClaimsConfig {
         public final ModConfigSpec.IntValue guiMaxRadius;
         public final ModConfigSpec.IntValue adminPermissionLevel;
         public final ModConfigSpec.IntValue denialMessageCooldownTicks;
+        public final ModConfigSpec.BooleanValue greetingsEnabled;
+        public final ModConfigSpec.EnumValue<GreetingDisplay> greetingDisplay;
+        public final ModConfigSpec.IntValue alarmCooldownSeconds;
 
         Server(ModConfigSpec.Builder b) {
             b.push("limits");
@@ -69,6 +72,18 @@ public final class ClaimsConfig {
                     "sent to the same player.")
                     .defineInRange("denialMessageCooldownTicks", 40, 0, 1200);
             b.pop();
+
+            b.push("greetings");
+            greetingsEnabled = b.comment("Owners can set a welcome and a farewell notification for their claims, and a",
+                    "visitor alarm. If false, nothing is shown or sent (the settings are kept).")
+                    .define("enabled", true);
+            greetingDisplay = b.comment("How welcome and farewell notifications are shown: TITLE (title and subtitle",
+                    "in the middle of the screen), ACTION_BAR (above the hotbar) or CHAT. All work on vanilla clients.")
+                    .defineEnum("display", GreetingDisplay.TITLE);
+            alarmCooldownSeconds = b.comment("The visitor alarm tells about the same visitor in the same claim at most",
+                    "once in this many seconds.")
+                    .defineInRange("alarmCooldownSeconds", 120, 0, 86_400);
+            b.pop();
         }
     }
 
@@ -81,9 +96,19 @@ public final class ClaimsConfig {
         }
     }
 
+    /** Where claim greetings are shown. */
+    public enum GreetingDisplay { TITLE, ACTION_BAR, CHAT }
+
+    /** Server limits only (no player's own limits). */
     public static ClaimLimits limits() {
+        return limits(ClaimLimits.PerPlayer.NONE);
+    }
+
+    /** Server limits, with each player's own limits (set by an operator) where they have them. */
+    public static ClaimLimits limits(ClaimLimits.PerPlayer perPlayer) {
         return new ClaimLimits(SERVER.maxChunksPerPlayer.get(), SERVER.maxClaimsPerPlayer.get(),
-                SERVER.requireContiguous.get(), SERVER.minSpawnDistance.get(), SERVER.maxMembersPerClaim.get());
+                SERVER.requireContiguous.get(), SERVER.minSpawnDistance.get(), SERVER.maxMembersPerClaim.get(),
+                perPlayer);
     }
 
     public static EnumSet<Permission> defaultPublicPermissions() {

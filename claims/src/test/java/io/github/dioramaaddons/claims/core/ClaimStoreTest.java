@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import io.github.dioramaaddons.claimsapi.ChunkCoord;
 import java.util.ArrayList;
@@ -56,6 +57,45 @@ class ClaimStoreTest {
         store.setMember(bob, bobs.id(), alice.id(), "Alice", EnumSet.noneOf(Permission.class), limits);
         assertEquals(3, store.chunkCount(alice.id()));
         assertEquals(ClaimResult.SUCCESS, claim(bob, 51, 50, limits).result());
+    }
+
+    @Test
+    void perPlayerLimitsOverrideServerLimits() {
+        // Server: 2 chunks and 1 claim each. Alice was given 4 chunks and 2 claims by an operator.
+        ClaimStore limitsStore = new ClaimStore();
+        limitsStore.setPlayerLimit(alice.id(), PlayerLimits.Key.CHUNKS, 4);
+        limitsStore.setPlayerLimit(alice.id(), PlayerLimits.Key.CLAIMS, 2);
+        ClaimLimits limits = new ClaimLimits(2, 1, true, 0, 32, limitsStore.perPlayer());
+        claim(alice, 0, 0, limits);
+        claim(alice, 1, 0, limits);
+        assertEquals(ClaimResult.SUCCESS, claim(alice, 2, 0, limits).result());
+        assertEquals(ClaimResult.SUCCESS, claim(alice, 20, 0, limits).result());
+        assertEquals(ClaimResult.CHUNK_LIMIT, claim(alice, 3, 0, limits).result());
+        claim(bob, 50, 50, limits);
+        claim(bob, 51, 50, limits);
+        assertEquals(ClaimResult.CHUNK_LIMIT, claim(bob, 52, 50, limits).result());
+        // Clearing the own value goes back to the server limit.
+        limitsStore.setPlayerLimit(alice.id(), PlayerLimits.Key.CHUNKS, null);
+        assertEquals(2, limits.maxChunksFor(alice.id()));
+        assertEquals(2, limits.maxClaimsFor(alice.id()));
+    }
+
+    @Test
+    void settingsNeedTheOwner() {
+        Claim c = claim(alice, 0, 0, ClaimLimits.DEFAULT).claim();
+        ClaimSettings s = ClaimSettings.DEFAULT.withWelcome("", "&aHello {player}").withAlarms(true, false);
+        assertEquals(ClaimResult.NOT_OWNER, store.setSettings(bob, c.id(), s).result());
+        assertEquals(ClaimSettings.DEFAULT, c.settings());
+        assertEquals(ClaimResult.SUCCESS, store.setSettings(alice, c.id(), s).result());
+        assertEquals("&aHello {player}", c.settings().welcome());
+        assertTrue(c.settings().alarmOwner());
+    }
+
+    @Test
+    void settingsTextsAreCleanedAndCut() {
+        ClaimSettings s = new ClaimSettings("  T\u00A7itle\n ", "x".repeat(400), "", "", false, false);
+        assertEquals("Title", s.welcomeTitle());
+        assertEquals(ClaimSettings.MAX_TEXT, s.welcome().length());
     }
 
     @Test

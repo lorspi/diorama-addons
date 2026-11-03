@@ -71,9 +71,9 @@ final class ServerPayloads {
         String dim = ClaimsService.dimensionId(level);
         ClaimStore.Actor actor = service.actor(player);
         ClaimStore.BatchOutcome outcome = p.claim()
-                ? service.store().claimChunks(actor, dim, chunks, p.target().orElse(null), ClaimsConfig.limits(),
+                ? service.store().claimChunks(actor, dim, chunks, p.target().orElse(null), ClaimsService.currentLimits(),
                         service.spawnChunk(level))
-                : service.store().unclaimChunks(actor, dim, chunks, ClaimsConfig.limits());
+                : service.store().unclaimChunks(actor, dim, chunks, ClaimsService.currentLimits());
         StatePayload.Feedback fb;
         if (outcome.firstError().ok()) {
             fb = new StatePayload.Feedback(true, p.claim() ? "dioaddons_claims.gui.claimed" : "dioaddons_claims.gui.released",
@@ -105,7 +105,7 @@ final class ServerPayloads {
                     return;
                 }
                 result = store.setMember(actor, p.claimId(), profile.get().getId(), profile.get().getName(), perms,
-                        ClaimsConfig.limits()).result();
+                        ClaimsService.currentLimits()).result();
             }
             case SET_MEMBER -> {
                 if (p.player().isEmpty()) {
@@ -117,7 +117,7 @@ final class ServerPayloads {
                     result = claim == null ? ClaimResult.CLAIM_NOT_FOUND : ClaimResult.MEMBER_NOT_FOUND;
                 } else {
                     result = store.setMember(actor, p.claimId(), member.id(), member.name(), perms,
-                            ClaimsConfig.limits()).result();
+                            ClaimsService.currentLimits()).result();
                 }
             }
             case REMOVE_MEMBER -> {
@@ -129,6 +129,18 @@ final class ServerPayloads {
             case SET_PUBLIC -> result = store.setPublicPermissions(actor, p.claimId(), perms).result();
             default -> result = ClaimResult.CLAIM_NOT_FOUND;
         }
+        service.sendState(player, result.ok()
+                ? new StatePayload.Feedback(true, "dioaddons_claims.gui.saved", List.of())
+                : feedback(result, 0));
+    }
+
+    static void claimSettings(ClaimSettingsPayload p, IPayloadContext ctx) {
+        ClaimsService service = ClaimsService.get();
+        ServerPlayer player = player(ctx);
+        if (service == null || player == null) {
+            return;
+        }
+        ClaimResult result = service.store().setSettings(service.actor(player), p.claimId(), p.settings()).result();
         service.sendState(player, result.ok()
                 ? new StatePayload.Feedback(true, "dioaddons_claims.gui.saved", List.of())
                 : feedback(result, 0));

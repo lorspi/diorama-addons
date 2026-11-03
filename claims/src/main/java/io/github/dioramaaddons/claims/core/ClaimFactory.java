@@ -10,6 +10,12 @@ public final class ClaimFactory {
 
     public static Claim create(UUID id, String name, UUID owner, String ownerName, String dimension,
             Collection<Long> chunks, Collection<ClaimMember> members, EnumSet<Permission> publicPermissions) {
+        return create(id, name, owner, ownerName, dimension, chunks, members, publicPermissions, ClaimSettings.DEFAULT);
+    }
+
+    public static Claim create(UUID id, String name, UUID owner, String ownerName, String dimension,
+            Collection<Long> chunks, Collection<ClaimMember> members, EnumSet<Permission> publicPermissions,
+            ClaimSettings settings) {
         Claim c = new Claim(id, name, owner, ownerName, dimension);
         c.mutableChunks().addAll(chunks);
         for (ClaimMember m : members) {
@@ -18,6 +24,7 @@ public final class ClaimFactory {
             }
         }
         c.setPublicPermissions(publicPermissions);
+        c.setSettings(settings);
         return c;
     }
 }

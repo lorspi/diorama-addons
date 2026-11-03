@@ -11,6 +11,8 @@ import com.mojang.serialization.Dynamic;
 import com.mojang.serialization.JsonOps;
 import io.github.dioramaaddons.claims.core.Claim;
 import io.github.dioramaaddons.claims.core.ClaimLimits;
+import io.github.dioramaaddons.claims.core.ClaimSettings;
+import io.github.dioramaaddons.claims.core.PlayerLimits;
 import io.github.dioramaaddons.claims.core.ClaimStore;
 import io.github.dioramaaddons.claims.core.Permission;
 import io.github.dioramaaddons.claims.core.PermissionTemplate;
@@ -57,6 +59,34 @@ class ClaimCodecsTest {
         Claim c = loaded.claimAt("minecraft:overworld", 0L);
         assertEquals(EnumSet.of(Permission.BREAK_BLOCKS), c.publicPermissions());
         assertTrue(c.members().isEmpty());
+    }
+
+    @Test
+    void settingsAndPlayerLimitsRoundTrip() {
+        ClaimStore store = new ClaimStore();
+        ClaimStore.Actor alice = new ClaimStore.Actor(UUID.randomUUID(), "Alice", false);
+        Claim home = store.claimChunk(alice, DIM, ChunkCoord.pack(1, 1), null, "Base", ClaimLimits.DEFAULT, null).claim();
+        ClaimSettings settings = new ClaimSettings("&6Hi", "Welcome {player}", "", "Bye", true, true);
+        store.setSettings(alice, home.id(), settings);
+        store.setPlayerLimit(alice.id(), PlayerLimits.Key.CHUNKS, 250);
+
+        JsonElement json = ClaimCodecs.encode(store, JsonOps.INSTANCE).getOrThrow();
+        ClaimStore loaded = ClaimCodecs.decode(new Dynamic<>(JsonOps.INSTANCE, json), new ClaimStore()).getOrThrow();
+        assertEquals(settings, loaded.claim(home.id()).orElseThrow().settings());
+        assertEquals(250, loaded.playerLimit(alice.id(), PlayerLimits.Key.CHUNKS).orElseThrow());
+        assertTrue(loaded.playerLimit(alice.id(), PlayerLimits.Key.CLAIMS).isEmpty());
+    }
+
+    @Test
+    void version1DataGetsDefaultSettings() {
+        String raw = """
+                {"format_version":1,"claims":[{"id":"%s","name":"Old","owner":"%s","dimension":"minecraft:overworld",
+                "chunks":[0]}]}
+                """.formatted(UUID.randomUUID(), UUID.randomUUID());
+        JsonObject json = JsonParser.parseString(raw).getAsJsonObject();
+        ClaimStore loaded = ClaimCodecs.decode(new Dynamic<>(JsonOps.INSTANCE, json), new ClaimStore()).getOrThrow();
+        assertEquals(ClaimSettings.DEFAULT, loaded.claimAt("minecraft:overworld", 0L).settings());
+        assertTrue(loaded.playerLimits().isEmpty());
     }
 
     @Test

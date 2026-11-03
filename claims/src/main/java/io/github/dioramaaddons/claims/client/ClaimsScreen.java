@@ -1,11 +1,13 @@
 package io.github.dioramaaddons.claims.client;
 
 import io.github.dioramaaddons.claims.config.ClaimsConfig;
+import io.github.dioramaaddons.claims.core.ClaimSettings;
 import io.github.dioramaaddons.claims.core.ClaimStore;
 import io.github.dioramaaddons.claims.core.Permission;
 import io.github.dioramaaddons.claims.core.PermissionTemplate;
 import io.github.dioramaaddons.claims.network.AdminActionPayload;
 import io.github.dioramaaddons.claims.network.ClaimChunksPayload;
+import io.github.dioramaaddons.claims.network.ClaimSettingsPayload;
 import io.github.dioramaaddons.claims.network.EditClaimPayload;
 import io.github.dioramaaddons.claims.network.RequestStatePayload;
 import io.github.dioramaaddons.claims.network.StatePayload;
@@ -40,10 +42,10 @@ import org.jetbrains.annotations.Nullable;
  * requests; the server validates each one and answers with a fresh {@link StatePayload}.
  */
 public final class ClaimsScreen extends Screen {
-    private enum Tab { CLAIMS, MEMBERS, PUBLIC }
+    private enum Tab { CLAIMS, MEMBERS, PUBLIC, SETTINGS }
 
     private static final int MARGIN = 8;
-    private static final int PANEL_W = 180;
+    private static final int PANEL_W = 200;
     private static final int ROW_H = 11;
     private static final int CLAIM_ROWS = 6;
     private static final int MEMBER_ROWS = 3;
@@ -104,6 +106,10 @@ public final class ClaimsScreen extends Screen {
     private @Nullable EditBox nameBox;
     private @Nullable EditBox memberBox;
     private @Nullable EditBox filterBox;
+    /** Drafts of the settings tab: welcome title, welcome text, farewell title, farewell text. */
+    private final String[] greetingDrafts = {"", "", "", ""};
+    private @Nullable UUID greetingDraftsOf;
+    private final List<EditBox> greetingBoxes = new ArrayList<>();
 
     public ClaimsScreen() {
         super(Component.translatable("dioaddons_claims.gui.title"));
@@ -140,7 +146,19 @@ public final class ClaimsScreen extends Screen {
             selectedMember = null;
         }
         confirmDelete = false;
+        if (d != null && (!d.id().equals(greetingDraftsOf) || greetingBoxes.stream().noneMatch(EditBox::isFocused))) {
+            loadGreetingDrafts(d);
+        }
         rebuildWidgets();
+    }
+
+    private void loadGreetingDrafts(StatePayload.ClaimDetail d) {
+        ClaimSettings st = d.settings();
+        greetingDrafts[0] = st.welcomeTitle();
+        greetingDrafts[1] = st.welcome();
+        greetingDrafts[2] = st.farewellTitle();
+        greetingDrafts[3] = st.farewell();
+        greetingDraftsOf = d.id();
     }
 
     @Override
@@ -266,14 +284,27 @@ public final class ClaimsScreen extends Screen {
         panelX = width - PANEL_W - MARGIN;
         panelY = top;
 
-        int tabW = (PANEL_W - 4) / 3;
-        addTab(Tab.CLAIMS, "dioaddons_claims.gui.tab.claims", panelX, tabW);
-        addTab(Tab.MEMBERS, "dioaddons_claims.gui.tab.members", panelX + tabW + 2, tabW);
-        addTab(Tab.PUBLIC, "dioaddons_claims.gui.tab.public", panelX + 2 * (tabW + 2), tabW);
+        // Four tabs sized to their labels, sharing the panel width.
+        String[] tabKeys = {"dioaddons_claims.gui.tab.claims", "dioaddons_claims.gui.tab.members",
+                "dioaddons_claims.gui.tab.public", "dioaddons_claims.gui.tab.settings"};
+        int[] tabW = new int[4];
+        int textW = 0;
+        for (int i = 0; i < 4; i++) {
+            tabW[i] = font.width(Component.translatable(tabKeys[i])) + 6;
+            textW += tabW[i];
+        }
+        int spare = PANEL_W - 6 - textW;
+        int tx = panelX;
+        for (int i = 0; i < 4; i++) {
+            int w = i == 3 ? panelX + PANEL_W - tx : tabW[i] + spare / 4;
+            addTab(Tab.values()[i], tabKeys[i], tx, w);
+            tx += w + 2;
+        }
 
         nameBox = null;
         memberBox = null;
         filterBox = null;
+        greetingBoxes.clear();
         if (state == null) {
             return;
         }
@@ -282,6 +313,7 @@ public final class ClaimsScreen extends Screen {
             case CLAIMS -> initClaimsTab(y);
             case MEMBERS -> initMembersTab(y);
             case PUBLIC -> initPublicTab(y);
+            case SETTINGS -> initSettingsTab(y);
         }
     }
 
@@ -457,6 +489,66 @@ public final class ClaimsScreen extends Screen {
         EnumSet<Permission> flags = EnumSet.complementOf(Permission.playerPermissions());
         addToggles(y, flags, d.publicMask(), 17, mask -> send(new EditClaimPayload(
                 EditClaimPayload.Op.SET_PUBLIC, d.id(), Optional.empty(), "", mask)));
+    }
+
+    // Settings tab rows, relative to the panel top + 20 (shared by init and render).
+    private static final int SET_WELCOME = 13;
+    private static final int SET_FAREWELL = 62;
+    private static final int SET_ALARM = 111;
+
+    private void initSettingsTab(int y) {
+        StatePayload.ClaimDetail d = selectedDetail();
+        if (d == null) {
+            return;
+        }
+        if (!d.id().equals(greetingDraftsOf)) {
+            loadGreetingDrafts(d);
+        }
+        greetingBox(0, ClaimSettings.MAX_TITLE, "dioaddons_claims.settings.title_hint", y + SET_WELCOME + 11);
+        greetingBox(1, ClaimSettings.MAX_TEXT, "dioaddons_claims.settings.text_hint", y + SET_WELCOME + 29);
+        greetingBox(2, ClaimSettings.MAX_TITLE, "dioaddons_claims.settings.title_hint", y + SET_FAREWELL + 11);
+        greetingBox(3, ClaimSettings.MAX_TEXT, "dioaddons_claims.settings.text_hint", y + SET_FAREWELL + 29);
+        ClaimSettings st = d.settings();
+        int ay = y + SET_ALARM + 11;
+        int w = (PANEL_W - 2) / 2;
+        addRenderableWidget(onOff("dioaddons_claims.settings.alarm_owner", st.alarmOwner(), panelX, ay, w,
+                () -> send(new ClaimSettingsPayload(d.id(), st.withAlarms(!st.alarmOwner(), st.alarmMembers())))));
+        addRenderableWidget(onOff("dioaddons_claims.settings.alarm_members", st.alarmMembers(), panelX + w + 2, ay, w,
+                () -> send(new ClaimSettingsPayload(d.id(), st.withAlarms(st.alarmOwner(), !st.alarmMembers())))));
+        int by = ay + 22;
+        Button save = Button.builder(Component.translatable("dioaddons_claims.settings.save"), b -> send(
+                new ClaimSettingsPayload(d.id(), new ClaimSettings(greetingDrafts[0], greetingDrafts[1], greetingDrafts[2],
+                        greetingDrafts[3], st.alarmOwner(), st.alarmMembers()))))
+                .bounds(panelX, by, PANEL_W - 52, 16).build();
+        addRenderableWidget(save);
+        addRenderableWidget(Button.builder(Component.translatable("dioaddons_claims.settings.clear"), b -> send(
+                new ClaimSettingsPayload(d.id(), new ClaimSettings("", "", "", "", st.alarmOwner(), st.alarmMembers()))))
+                .bounds(panelX + PANEL_W - 50, by, 50, 16)
+                .tooltip(net.minecraft.client.gui.components.Tooltip.create(
+                        Component.translatable("dioaddons_claims.settings.clear.desc")))
+                .build());
+    }
+
+    private void greetingBox(int index, int max, String hintKey, int y) {
+        EditBox box = new EditBox(font, panelX, y, PANEL_W, 16, Component.translatable(hintKey));
+        box.setMaxLength(max);
+        box.setValue(greetingDrafts[index]);
+        box.setResponder(v -> greetingDrafts[index] = v);
+        box.setHint(Component.translatable(hintKey).withStyle(ChatFormatting.DARK_GRAY));
+        box.setTooltip(net.minecraft.client.gui.components.Tooltip.create(
+                Component.translatable("dioaddons_claims.settings.format_help")));
+        addRenderableWidget(box);
+        greetingBoxes.add(box);
+    }
+
+    private Button onOff(String key, boolean on, int x, int y, int w, Runnable toggle) {
+        MutableComponent label = Component.literal(on ? "✔ " : "✘ ")
+                .withStyle(on ? ChatFormatting.GREEN : ChatFormatting.RED)
+                .append(Component.translatable(key).withStyle(ChatFormatting.WHITE));
+        return Button.builder(label, b -> toggle.run()).bounds(x, y, w, 16)
+                .tooltip(net.minecraft.client.gui.components.Tooltip.create(
+                        Component.translatable("dioaddons_claims.settings.alarm_help")))
+                .build();
     }
 
     /** Two columns of on/off buttons. Returns the y below the last row. */
@@ -646,6 +738,27 @@ public final class ClaimsScreen extends Screen {
                 g.drawString(font, Component.translatable("dioaddons_claims.gui.public_players"), panelX, y + 12, 0xAAAAAA);
                 int flagsY = y + 24 + 4 * 17 + 2;
                 g.drawString(font, Component.translatable("dioaddons_claims.gui.public_flags"), panelX, flagsY, 0xAAAAAA);
+            }
+            case SETTINGS -> {
+                StatePayload.ClaimDetail d = selectedDetail();
+                if (d == null) {
+                    g.drawWordWrap(font, Component.translatable("dioaddons_claims.gui.select_claim_first"), panelX, y,
+                            PANEL_W, 0xAAAAAA);
+                    return;
+                }
+                g.drawString(font, font.plainSubstrByWidth(Component.translatable("dioaddons_claims.settings.of",
+                        d.name()).getString(), PANEL_W), panelX, y, othersClaim(d) ? ADMIN_TEXT : 0xFFFFFF);
+                g.drawString(font, Component.translatable("dioaddons_claims.settings.welcome"), panelX, y + SET_WELCOME,
+                        0xAAAAAA);
+                g.drawString(font, Component.translatable("dioaddons_claims.settings.farewell"), panelX, y + SET_FAREWELL,
+                        0xAAAAAA);
+                g.drawString(font, Component.translatable("dioaddons_claims.settings.alarm"), panelX, y + SET_ALARM,
+                        0xAAAAAA);
+                int helpY = y + SET_ALARM + 11 + 22 + 22;
+                if (helpY + 20 < height - 24) {
+                    g.drawWordWrap(font, Component.translatable("dioaddons_claims.settings.placeholders"), panelX, helpY,
+                            PANEL_W, 0x888888);
+                }
             }
         }
     }

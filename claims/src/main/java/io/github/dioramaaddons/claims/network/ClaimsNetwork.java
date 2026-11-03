@@ -9,7 +9,7 @@ import net.neoforged.neoforge.network.registration.PayloadRegistrar;
  */
 public final class ClaimsNetwork {
     /** Bumped whenever a payload changes: a client and a server with different versions cannot talk. */
-    public static final String VERSION = "2";
+    public static final String VERSION = "3";
 
     private ClaimsNetwork() {}
 
@@ -19,6 +19,7 @@ public final class ClaimsNetwork {
         r.playToServer(UnsubscribePayload.TYPE, UnsubscribePayload.CODEC, ServerPayloads::unsubscribe);
         r.playToServer(ClaimChunksPayload.TYPE, ClaimChunksPayload.CODEC, ServerPayloads::claimChunks);
         r.playToServer(EditClaimPayload.TYPE, EditClaimPayload.CODEC, ServerPayloads::editClaim);
+        r.playToServer(ClaimSettingsPayload.TYPE, ClaimSettingsPayload.CODEC, ServerPayloads::claimSettings);
         r.playToServer(AdminActionPayload.TYPE, AdminActionPayload.CODEC, ServerPayloads::adminAction);
         r.playToClient(OpenScreenPayload.TYPE, OpenScreenPayload.CODEC,
                 (p, ctx) -> io.github.dioramaaddons.claims.client.ClientPayloads.openScreen());

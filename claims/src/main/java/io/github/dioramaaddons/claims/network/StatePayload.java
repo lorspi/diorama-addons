@@ -1,5 +1,6 @@
 package io.github.dioramaaddons.claims.network;
 
+import io.github.dioramaaddons.claims.core.ClaimSettings;
 import java.util.List;
 import java.util.UUID;
 import net.minecraft.core.UUIDUtil;
@@ -31,7 +32,7 @@ public record StatePayload(String dimension, int centerX, int centerZ, int radiu
     public record Member(UUID id, String name, int mask) {}
 
     public record ClaimDetail(UUID id, String name, UUID ownerId, String ownerName, String dimension, int chunkCount,
-            int publicMask, List<Member> members) {}
+            int publicMask, List<Member> members, ClaimSettings settings) {}
 
     /** Result of the last action, shown in the screen. */
     public record Feedback(boolean success, String key, List<String> args) {}
@@ -65,6 +66,7 @@ public record StatePayload(String dimension, int centerX, int centerZ, int radiu
                 b2.writeUtf(m.name());
                 b2.writeVarInt(m.mask());
             });
+            ClaimSettingsPayload.writeSettings(b, c.settings());
         });
         buf.writeVarInt(usedChunks);
         buf.writeVarInt(maxChunks);
@@ -91,7 +93,8 @@ public record StatePayload(String dimension, int centerX, int centerZ, int radiu
         int[] cells = buf.readVarIntArray((2 * 129 + 1) * (2 * 129 + 1));
         List<ClaimDetail> manageable = buf.readList(b -> new ClaimDetail(UUIDUtil.STREAM_CODEC.decode(b),
                 b.readUtf(), UUIDUtil.STREAM_CODEC.decode(b), b.readUtf(), b.readUtf(), b.readVarInt(), b.readVarInt(),
-                b.readList(b2 -> new Member(UUIDUtil.STREAM_CODEC.decode(b2), b2.readUtf(), b2.readVarInt()))));
+                b.readList(b2 -> new Member(UUIDUtil.STREAM_CODEC.decode(b2), b2.readUtf(), b2.readVarInt())),
+                ClaimSettingsPayload.readSettings(b)));
         int usedChunks = buf.readVarInt();
         int maxChunks = buf.readVarInt();
         int usedClaims = buf.readVarInt();
