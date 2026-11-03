@@ -37,6 +37,9 @@ commands.
 - Open the screen with **G** (change it in Controls) or `/claims menu`. The grid shows the real terrain
   around you in the style of the Diorama map, with each claim's colour and border on top. Left click or
   drag to claim or release; right click to select a claim.
+- **Settings tab** per claim: a welcome and a farewell notification for whoever enters or leaves (title and
+  message, with `{player}`, `{claim}`, `{owner}` and colours like `&a`), and a **visitor alarm** for the owner
+  and/or the members. Players without the mod see the notifications too.
 
 | Command | |
 |---|---|
@@ -47,7 +50,10 @@ commands.
 | `/claims permission public <permission> <true\|false>` | What everyone may do, and claim settings |
 | `/claims permission member <player> <permission> <true\|false>` | One friend's permission |
 | `/claims permission template <player> <template>` | Apply a template |
+| `/claims settings welcome\|farewell title\|text <text>` · `clear` | Welcome / farewell notifications |
+| `/claims settings alarm owner\|members <true\|false>` | Visitor alarm |
 | `/claims admin bypass\|list [player]\|delete\|unclaim\|transfer <player>` | Operators |
+| `/claims admin limits <player> [chunks\|claims\|members <n\|default>\|reset]` | A player's own limits (operators) |
 
 Operators also get an **admin mode** button in the screen: it lists every player's claim (with a search box)
 to rename, delete, edit members and permissions, add or release chunks, teleport there or transfer it.
@@ -95,17 +101,21 @@ API: [docs/webmap-api.md](docs/webmap-api.md).
 - **Claims** on Diorama's map and minimap, coloured by owner, "claim · owner" on hover. With Claims also on
   the client, right-click the map to **claim or release a chunk**.
 - **Shared explored map:** places other players explored appear on your map, sent in the background.
-- **Shared waypoints:** right-click → *Add shared waypoint here*; delete from the pin's menu.
-- **Player positions** of your group on the map and radar. Hide yours with `/maplocation hide`.
+- **Shared waypoints:** in Diorama's waypoint screen, **Share: Private / Public / Group**. Renaming, moving or
+  deleting the waypoint updates it for everyone.
+- **Player positions** of your group on the map and radar.
+- **Map settings** (map right-click → *Map settings…*, `/clientmap settings` or the mods list): claims on the
+  map, claims on the minimap, share my location, share my explored map.
 - The server decides, separately for the explored map and for locations: off, shared by everyone, or by
   groups of friends.
 
 | Command | |
 |---|---|
 | `/mapgroup create <name>` · `invite <player>` · `join <name>` · `leave` · `kick <player>` · `info` | Groups of friends |
-| `/sharedwaypoint add <name>` · `list` · `rename <old> <new>` · `remove <name>` | Shared waypoints |
+| `/sharedwaypoint list` · `remove <name>` | Shared waypoints you see |
 | `/maplocation show\|hide` | Share or hide your position |
-| `/clientmap status` · `/clientmap resync` (client) | Sync state · send the explored map again |
+| `/mapexplored share\|keep` | Share what you explore, or keep it to yourself |
+| `/clientmap settings` · `status` · `resync` (client) | Map settings · sync state · send the explored map again |
 
 Config: `config/dioaddons_clientmap-common.toml` on the server. How it hooks into Diorama:
 [docs/clientmap-research.md](docs/clientmap-research.md).

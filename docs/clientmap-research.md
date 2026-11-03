@@ -137,8 +137,9 @@ Compared with `javap -p -c` against 0.6.0, for every class, method and field the
   checked and added to the supported list.
 - **Shared waypoints appear in Diorama's "Waystones" folder.** It is the only read-only kind Diorama has;
   a folder of our own would need much deeper mixins.
-- **Shared waypoints are edited with commands** (`/sharedwaypoint ...`) and deleted from the map menu;
-  Diorama's own edit screen only works on its local waypoints.
+- **Shared waypoints are shared from Diorama's waypoint screen** (a button added by a mixin) and stay in step
+  with the local waypoint; other players' shared waypoints are read-only for them (an owner, group owner or
+  operator can delete them from the pin's menu or with `/sharedwaypoint remove`).
 - **Explored chunks are sent as block data**, so the first sync on a big server takes time and bandwidth
   (rate-limited, oldest first). The client remembers how far it got per server, dimension and scope.
   Terrain that changes after exploration is updated when someone with the client mod sees it again.

@@ -95,10 +95,30 @@ Templates are shortcuts: after applying one, each permission can still be toggle
 | `/claims permission public <permission> <true\|false>` | Public permissions and claim settings |
 | `/claims permission member <player> <permission> <true\|false>` | One member permission |
 | `/claims permission template <player> <template>` | Apply a template to a member |
+| `/claims settings` | Show the notifications and alarm of the claim at your position |
+| `/claims settings welcome\|farewell title <text>` / `text <text>` / `clear` | Welcome / farewell notification |
+| `/claims settings alarm owner\|members <true\|false>` | Visitor alarm |
 | `/claims admin bypass` | Toggle protection bypass (operators) |
 | `/claims admin list [player]` | List all claims, or one player's |
 | `/claims admin delete` / `/claims admin unclaim` | Remove the claim / chunk at your position |
 | `/claims admin transfer <player>` | Give the claim at your position to another player |
+| `/claims admin limits <player> [chunks\|claims\|members <n\|default>\|reset]` | A player's own limits |
+
+## Claim settings
+
+Each claim can have a **welcome** and a **farewell** notification (title and message) and a **visitor alarm**.
+Only the owner (or an operator in admin mode) changes them, from the screen's *Settings* tab or with
+`/claims settings`. Texts accept `{player}`, `{claim}` and `{owner}`, colour codes `&0`–`&f`, `&#RRGGBB`, and `&l`
+bold, `&o` italic, `&n` underline, `&m` strikethrough, `&r` reset. An empty message means no notification; an
+empty title shows the claim's name. Notifications are vanilla titles (or action bar / chat, `greetings.display`).
+The alarm tells the owner and/or the members, with a chat line and a bell, when someone who is neither comes in;
+the same visitor is reported at most once every `greetings.alarmCooldownSeconds` per claim.
+
+## Players' own limits
+
+`maxChunksPerPlayer`, `maxClaimsPerPlayer` and `maxMembersPerClaim` are server limits. Operators can give one
+player different values with `/claims admin limits`; `default` (or `reset` for all three) goes back to the server
+limits. Being a member of other players' claims never counts towards any limit.
 
 Messages are translated on the server (English and Spanish) so players without the mod read them in their
 language.

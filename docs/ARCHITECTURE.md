@@ -160,7 +160,7 @@ Research and the list of Diorama entry points: [clientmap-research.md](clientmap
 
 | Package | Side | Content |
 |---|---|---|
-| `clientmap.core` | pure | `ShareMode`, `Scopes`, `ExploredLog`, `GroupRegistry`, `SharedWaypoint` |
+| `clientmap.core` | pure | `ShareMode`, `Scopes`, `Sharing`, `ExploredLog`, `GroupRegistry`, `SharedWaypoint` |
 | `clientmap.server` | server | `ClientMapServer` (streams, players, waypoints, claims feed), `ClientMapData`, commands |
 | `clientmap.network` | both | optional payloads |
 | `clientmap.client` | client | handshake, chunk rebuilding, sync progress; never touches Diorama classes |
@@ -199,6 +199,35 @@ Research and the list of Diorama entry points: [clientmap-research.md](clientmap
     `spotItems(Spot)` in 0.6.x, `MapScreenSpotV07Mixin` for `spotItems(Spot, BlockPos)` in 0.7.0), so
     injectors keep `defaultRequire 1` and a missing target still fails loudly. clientmap compiles against
     the newest supported version (0.7.0); older ones stay supported while it costs one small mixin.
+
+### Changes ported from Mochos Esenciales (claims 0.3.0, clientmap 0.3.0)
+
+Mochos Esenciales bundles copies of claims and clientmap and improved them; these changes were brought back,
+without anything that only exists in Mochos (its module switches, global admin mode, friend groups and settings
+screen).
+
+38. **Waypoints are shared from Diorama's own waypoint screen** (`WaypointEditScreenMixin`): the shared copy keeps
+    the Diorama waypoint's id and is marked `linked`; the owner does not receive it back and keeps editing the
+    original. `WaypointStoreMixin` sends changes after Diorama saves and withdraws a deleted waypoint. The server
+    only accepts a linked waypoint from its owner, into `global` or one of their groups. The share button's groups
+    come with the session payload, so the client needs no other group data.
+39. **Sharing rules moved to `clientmap.core.Sharing`** and accept several groups per player, so a future group
+    system with more than one group per player needs no protocol change. `/mapgroup` still gives one group.
+40. **Explored chunks always go to the player's own pool too** and, when they share, to the pools they read.
+    Turning sharing on (map settings or `/mapexplored share`) or joining a group copies the own pool in
+    (`handOverExplored`, idempotent). This replaces moving the own pool into a group on join (decision 28):
+    leaving a group no longer loses what you explored alone. In `GROUPS` mode a player without a group reads
+    nothing from the server; their own map is already on their client.
+41. **Per-player map settings.** Claims on the map / minimap are client config (`dioaddons_clientmap-client.toml`)
+    read through `@Redirect`s on Diorama's `Settings.claims` in `MapScreen` and `MinimapHud`, so Diorama's own
+    setting still applies. Share location / share explored are stored on the server (`ClientMapData`, format 2) and
+    set with the optional `preferences` payload or commands.
+42. **Claim settings live in the claim** (`ClaimSettings`, storage format 2, optional field) and travel in the
+    state payload, so the screen needs no extra request. Greetings are sent as vanilla title / action bar / chat
+    packets so players without the mod see them; formatting codes are parsed by the pure `claims.core.TextFormat`
+    (from Mochos Esenciales).
+43. **Players' own limits** are stored with the claims (`player_limits`) and applied through
+    `ClaimLimits.PerPlayer`; `ClaimsService.limits()` combines them with the server config.
 
 ## Section 10 — open source
 

@@ -26,6 +26,20 @@ Each mod is versioned on its own with [Semantic Versioning](https://semver.org/)
 
 ### [Unreleased]
 
+### [0.3.0] - 2026-11-03
+
+- **Claim settings tab** in the claims screen: a welcome and a farewell notification for whoever enters or leaves
+  the claim (title and message, with `{player}`, `{claim}`, `{owner}` and colour codes such as `&a` or `&#FF8800`;
+  without a title the claim's name is used) and a **visitor alarm** that tells the owner and/or the members when
+  someone who is neither comes in (chat message and bell, at most once per visitor every
+  `greetings.alarmCooldownSeconds`). Sent with vanilla packets, so players without the mod see them too; shown as
+  title, action bar or chat (`greetings.display`). Same from commands: `/claims settings ...`.
+- **Players' own limits**: operators can give a player more or fewer chunks, claims or members per claim than the
+  server limits with `/claims admin limits <player> <chunks|claims|members> <n|default>` (or `reset`). The
+  screen and `/claims list` show each player's own limits.
+- Storage format 2 (claim settings and players' limits; version 1 data loads as is). Network protocol 3: clients
+  and servers must both run 0.3.x to use the screen.
+
 ### [0.2.0] - 2026-11-02
 
 - **Admin mode in the claims screen** (operators): a button turns it on and off (same as
@@ -103,6 +117,20 @@ Each mod is versioned on its own with [Semantic Versioning](https://semver.org/)
 ## clientmap
 
 ### [Unreleased]
+
+### [0.3.0] - 2026-11-03
+
+- **Share your own waypoints from Diorama's waypoint screen**: a "Share: Private / Public / Group" button under
+  "Show on maps". Renaming, moving, recolouring or deleting the waypoint in Diorama updates (or withdraws) it for
+  the others. Replaces "Add shared waypoint here" in the map menu and `/sharedwaypoint add|rename`;
+  `/sharedwaypoint list|remove` stay.
+- **Map settings** (map right-click menu "Map settings…", `/clientmap settings` or the mods list): show claims on
+  the map, show claims on the minimap, share my location and share my explored map, all on by default.
+  `/mapexplored share|keep` sets the last one without the client mod.
+- What a player explores is always kept in their own pool too, so turning sharing on, or joining a group, hands
+  over what they explored before. Several pools can be synced at once.
+- Leaving or being removed from a map group withdraws the waypoints shared with that group.
+- Map protocol 2 and storage format 2: server and clients must be updated together.
 
 ### [0.2.0] - 2026-11-02
 
